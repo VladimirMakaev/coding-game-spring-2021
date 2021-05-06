@@ -1,0 +1,33 @@
+use std::{fmt::Debug, io::stdin};
+use std::{marker::PhantomData, str::FromStr};
+
+pub struct Next<T> {
+    __data: PhantomData<T>,
+}
+
+impl<T> Next<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: Debug,
+{
+    fn read_line() -> String {
+        let mut buffer = String::new();
+        let _ = stdin().read_line(&mut buffer).unwrap();
+        buffer.trim().to_owned()
+    }
+
+    pub fn read() -> T {
+        <T as FromStr>::from_str(Self::read_line().as_str()).unwrap()
+    }
+
+    pub fn from(str: &str) -> T {
+        <T as FromStr>::from_str(str).unwrap()
+    }
+
+    pub fn read_many() -> Vec<T> {
+        let line = Self::read_line();
+        line.split(' ')
+            .flat_map(|x| <T as FromStr>::from_str(x))
+            .collect()
+    }
+}

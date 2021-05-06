@@ -1,5 +1,6 @@
 [package]
 authors = ["Vladimir Makaev <vmakaev@gmail.com>"]
+build = "build/build.rs"
 edition = "2018"
 name = "coding-game-spring-2021"
 version = "0.1.0"
