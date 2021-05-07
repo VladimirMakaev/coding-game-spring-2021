@@ -27,10 +27,10 @@ fn main() {
 
     // game loop
     loop {
-        let day: i32 = Next::read(); // the game lasts 24 days: 0-23
-        let nutrients: i32 = Next::read(); // the base score you gain from the next COMPLETE action
-        let inputs: Vec<i32> = Next::read_many();
-        let sun = inputs[0]; // your sun points
+        let day: u8 = Next::read(); // the game lasts 24 days: 0-23
+        let nutrients: u16 = Next::read(); // the base score you gain from the next COMPLETE action
+        let inputs: Vec<u16> = Next::read_many();
+        let sun_points = inputs[0]; // your sun points
         let score = inputs[1]; // your current score
         let inputs: Vec<i32> = Next::read_many();
         let opp_sun = inputs[0]; // opponent's sun points
@@ -53,13 +53,12 @@ fn main() {
             actions.push(possible_move);
         }
 
+        let game = Game::new(&board, nutrients, sun_points, day);
+
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
-        println!(
-            "{}",
-            game::get_next_action_wood(&Game::new(&board), &actions)
-        );
+        println!("{}", game::get_next_action_wood(&game, &actions));
     }
 }
