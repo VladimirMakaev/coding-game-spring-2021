@@ -1,6 +1,15 @@
-use std::io;
-pub mod parse;
+use std::{cell, io};
+mod actions;
+mod board;
+mod game;
+mod parse;
+use actions::*;
+use board::{Board, Cell};
 use parse::*;
+
+use game::get_next_action_wood;
+
+use crate::game::Game;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -8,18 +17,13 @@ use parse::*;
  **/
 fn main() {
     let number_of_cells: i32 = Next::read(); // 37
-
+    let mut cells = Vec::new();
     for i in 0..number_of_cells as usize {
-        let inputs: Vec<i32> = Next::read_many();
-        let index = inputs[0]; // 0 is the center cell, the next cells spiral outwards
-        let richness = inputs[1]; // 0 if the cell is unusable, 1-3 for usable cells
-        let neigh_0 = inputs[2]; // the index of the neighbouring cell for each direction
-        let neigh_1 = inputs[3];
-        let neigh_2 = inputs[4];
-        let neigh_3 = inputs[5];
-        let neigh_4 = inputs[6];
-        let neigh_5 = inputs[7];
+        let cell: Cell = Next::read();
+        cells.push(cell);
     }
+
+    let board: Board = cells.into_iter().collect();
 
     // game loop
     loop {
@@ -40,17 +44,22 @@ fn main() {
             let is_mine = inputs[2]; // 1 if this is your tree
             let is_dormant = inputs[3]; // 1 if this tree is dormant
         }
-        let number_of_possible_moves: i32 = Next::read();
 
+        let number_of_possible_moves: i32 = Next::read(); //test
+        let mut actions = Vec::<Action>::new();
         for i in 0..number_of_possible_moves as usize {
-            let possible_move: String = Next::read();
-            eprint!("{}", possible_move);
+            let possible_move: Action = Next::read();
+            //eprintln!("{:?}", possible_move);
+            actions.push(possible_move);
         }
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
-        println!("WAIT");
+        println!(
+            "{}",
+            game::get_next_action_wood(&Game::new(&board), &actions)
+        );
     }
 }

@@ -13,7 +13,10 @@ where
     fn read_line() -> String {
         let mut buffer = String::new();
         let _ = stdin().read_line(&mut buffer).unwrap();
-        buffer.trim().to_owned()
+
+        let result = buffer.trim().to_owned();
+        eprintln!("{}", result);
+        result
     }
 
     pub fn read() -> T {
