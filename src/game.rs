@@ -3,10 +3,12 @@ use std::{cmp::Ordering, u8};
 use crate::{
     actions::Action,
     board::{self, Board},
+    tree::{Tree, TreeCollection},
 };
 
 pub struct Game<'a> {
     board: &'a board::Board,
+    trees: TreeCollection,
     nutrients: u16,
     sun_points: u16,
     day: u8,
@@ -15,9 +17,16 @@ pub struct Game<'a> {
 pub struct Player {}
 
 impl<'a> Game<'a> {
-    pub fn new(board: &'a Board, nutrients: u16, sun_points: u16, day: u8) -> Self {
+    pub fn new(
+        board: &'a Board,
+        trees: TreeCollection,
+        nutrients: u16,
+        sun_points: u16,
+        day: u8,
+    ) -> Self {
         Self {
             board,
+            trees,
             nutrients,
             sun_points,
             day,
@@ -72,7 +81,7 @@ mod tests {
     #[test]
     fn get_next_action_wood_sorts_as_expected() {
         let x = get_next_action_wood(
-            &Game::new(&Board::default(), 10, 10, 1),
+            &Game::new(&Board::default(), TreeCollection::empty(), 10, 10, 1),
             &vec![Action::WAIT, Action::COMPLETE(20), Action::COMPLETE(1)],
         );
 

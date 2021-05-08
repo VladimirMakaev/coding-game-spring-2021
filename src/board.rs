@@ -1,5 +1,7 @@
 use std::{iter::FromIterator, str::FromStr, usize};
 
+use crate::common::ParseError;
+
 pub struct Board {
     cells: Vec<Cell>,
 }
@@ -64,28 +66,30 @@ impl FromIterator<Cell> for Board {
     }
 }
 
+type Edge = Option<u8>;
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct Cell {
     index: u8,
     richness: u8,
-    neig_0: i8,
-    neig_1: i8,
-    neig_2: i8,
-    neig_3: i8,
-    neig_4: i8,
-    neig_5: i8,
+    neig_0: Edge,
+    neig_1: Edge,
+    neig_2: Edge,
+    neig_3: Edge,
+    neig_4: Edge,
+    neig_5: Edge,
 }
 
 impl Cell {
     pub fn new(
         index: u8,
         richness: u8,
-        neig_0: i8,
-        neig_1: i8,
-        neig_2: i8,
-        neig_3: i8,
-        neig_4: i8,
-        neig_5: i8,
+        neig_0: Edge,
+        neig_1: Edge,
+        neig_2: Edge,
+        neig_3: Edge,
+        neig_4: Edge,
+        neig_5: Edge,
     ) -> Self {
         Self {
             index,
@@ -100,21 +104,33 @@ impl Cell {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ParseCellError {
-    InvalidInput,
-}
-
 impl FromStr for Cell {
-    type Err = ParseCellError;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        fn to_edge(x: i8) -> Edge {
+            if x < 0 {
+                None
+            } else {
+                Some(x as u8)
+            }
+        }
+
         let s: Vec<i8> = s.split(' ').flat_map(|x| x.parse::<i8>()).collect();
 
         if s.len() == 8 {
-            return Ok(Cell::new(s[0] as u8, s[1] as u8, s[2], s[3], s[4], s[5], s[6], s[7]));
+            return Ok(Cell::new(
+                s[0] as u8,
+                s[1] as u8,
+                to_edge(s[2]),
+                to_edge(s[3]),
+                to_edge(s[4]),
+                to_edge(s[5]),
+                to_edge(s[6]),
+                to_edge(s[7]),
+            ));
         }
-        return Err(ParseCellError::InvalidInput);
+        return Err(ParseError::UnknownInput);
     }
 }
 
@@ -125,7 +141,19 @@ mod tests {
     #[test]
     fn it_can_parse() {
         let result = "1 3 7 8 2 0 6 18".parse::<Cell>();
-        assert_eq!(result, Ok(Cell::new(1, 3, 7, 8, 2, 0, 6, 18)));
+        assert_eq!(
+            result,
+            Ok(Cell::new(
+                1,
+                3,
+                Some(7),
+                Some(8),
+                Some(2),
+                Some(0),
+                Some(6),
+                Some(18)
+            ))
+        );
     }
 
     #[test]

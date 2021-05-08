@@ -23,13 +23,13 @@ where
         <T as FromStr>::from_str(Self::read_line().as_str()).unwrap()
     }
 
-    pub fn from(str: &str) -> T {
-        <T as FromStr>::from_str(str).unwrap()
-    }
-
     pub fn read_many() -> Vec<T> {
         let line = Self::read_line();
-        line.split(' ')
+        Self::read_many_from(line.as_str())
+    }
+
+    pub fn read_many_from(s: &str) -> Vec<T> {
+        s.split(' ')
             .flat_map(|x| <T as FromStr>::from_str(x))
             .collect()
     }

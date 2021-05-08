@@ -1,17 +1,13 @@
+use crate::common::ParseError;
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Action {
     WAIT,
     COMPLETE(u8),
     GROW(u8),
     SEED(u8, u8),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ParseActionError {
-    InvalidParameters,
-    UnknownAction,
 }
 
 impl Display for Action {
@@ -26,32 +22,32 @@ impl Display for Action {
 }
 
 impl FromStr for Action {
-    type Err = ParseActionError;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let params: Vec<&str> = s.split(' ').collect();
         match (params[0], params.len()) {
             ("WAIT", 1) => Ok(Action::WAIT),
-            ("WAIT", _) => Err(ParseActionError::InvalidParameters),
+            ("WAIT", _) => Err(ParseError::InvalidParameters),
             ("COMPLETE", 2) => Ok(Action::COMPLETE(
                 params[1]
                     .parse::<u8>()
-                    .map_err(|_| ParseActionError::InvalidParameters)?,
+                    .map_err(|_| ParseError::InvalidParameters)?,
             )),
             ("GROW", 2) => Ok(Action::GROW(
                 params[1]
                     .parse::<u8>()
-                    .map_err(|_| ParseActionError::InvalidParameters)?,
+                    .map_err(|_| ParseError::InvalidParameters)?,
             )),
             ("SEED", 3) => Ok(Action::SEED(
                 params[1]
                     .parse::<u8>()
-                    .map_err(|_| ParseActionError::InvalidParameters)?,
+                    .map_err(|_| ParseError::InvalidParameters)?,
                 params[2]
                     .parse::<u8>()
-                    .map_err(|_| ParseActionError::InvalidParameters)?,
+                    .map_err(|_| ParseError::InvalidParameters)?,
             )),
-            _ => Err(ParseActionError::UnknownAction),
+            _ => Err(ParseError::UnknownInput),
         }
     }
 }

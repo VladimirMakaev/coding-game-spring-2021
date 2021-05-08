@@ -1,15 +1,14 @@
-use std::{cell, io};
 mod actions;
 mod board;
+pub mod common;
 mod game;
-mod parse;
+pub mod parse;
+mod tree;
 use actions::*;
 use board::{Board, Cell};
 use parse::*;
 
-use game::get_next_action_wood;
-
-use crate::game::Game;
+use crate::{game::Game, tree::Tree};
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -37,23 +36,27 @@ fn main() {
         let opp_score = inputs[1]; // opponent's score
         let opp_is_waiting = inputs[2]; // whether your opponent is asleep until the next day
         let number_of_trees: i32 = Next::read(); // the current amount of trees
-        for i in 0..number_of_trees as usize {
-            let inputs: Vec<i32> = Next::read_many();
-            let cell_index = inputs[0]; // location of this tree
-            let size = inputs[1]; // size of this tree: 0-3
-            let is_mine = inputs[2]; // 1 if this is your tree
-            let is_dormant = inputs[3]; // 1 if this tree is dormant
+        let mut trees = Vec::<Tree>::new();
+
+        for _i in 0..number_of_trees as usize {
+            trees.push(Next::read());
         }
 
         let number_of_possible_moves: i32 = Next::read(); //test
         let mut actions = Vec::<Action>::new();
-        for i in 0..number_of_possible_moves as usize {
+        for _i in 0..number_of_possible_moves as usize {
             let possible_move: Action = Next::read();
             //eprintln!("{:?}", possible_move);
             actions.push(possible_move);
         }
 
-        let game = Game::new(&board, nutrients, sun_points, day);
+        let game = Game::new(
+            &board,
+            trees.into_iter().collect(),
+            nutrients,
+            sun_points,
+            day,
+        );
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
