@@ -1,4 +1,5 @@
-use std::{collections::HashMap, iter::FromIterator, str::FromStr};
+use core::panic;
+use std::{collections::HashMap, iter::FromIterator, str::FromStr, string, usize};
 
 use crate::common::ParseError;
 use crate::parse::*;
@@ -11,8 +12,24 @@ pub struct Tree {
     is_dormant: bool,
 }
 
+impl Tree {
+    pub fn index(&self) -> u8 {
+        self.index
+    }
+    pub fn size(&self) -> u8 {
+        self.size
+    }
+    pub fn is_mine(&self) -> bool {
+        self.is_mine
+    }
+    pub fn is_dormant(&self) -> bool {
+        self.is_dormant
+    }
+}
+
 pub struct TreeCollection {
     trees: HashMap<u8, Tree>,
+    trees_by_size: Vec<u8>,
 }
 
 impl TreeCollection {
@@ -20,8 +37,52 @@ impl TreeCollection {
         Self::new(HashMap::new())
     }
 
+    pub fn get(&self, index: u8) -> &Tree {
+        self.trees.get(&index).unwrap()
+    }
+
+    pub fn has_at(&self, index: u8) -> bool {
+        self.trees.contains_key(&index)
+    }
+
     pub fn new(map: HashMap<u8, Tree>) -> Self {
-        Self { trees: map }
+        let mut trees_by_size: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
+        for (_, t) in &map {
+            match (t.is_mine, t.size) {
+                (true, x) if x <= 3 => trees_by_size[t.size as usize] += 1,
+                (false, y) if y <= 3 => trees_by_size[t.size as usize + 4] += 1,
+                _ => panic!("Incorrect size: {} for is_mine: {}", t.size, t.is_mine),
+            }
+        }
+
+        Self {
+            trees: map,
+            trees_by_size,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.trees.len()
+    }
+
+    pub fn get_amount_of_size(&self, size: u8, is_mine: bool) -> u8 {
+        let offset = if is_mine { 0 } else { 4 };
+        self.trees_by_size[offset + size as usize]
+    }
+
+    pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
+        self.trees.iter().filter(|(i, t)| t.is_mine).map(|(_, t)| t)
+    }
+
+    #[cfg(test)]
+    pub fn from_strings<'a, T>(strings: T) -> Self
+    where
+        T: IntoIterator<Item = &'a str>,
+    {
+        strings
+            .into_iter()
+            .flat_map(|x| x.parse::<Tree>())
+            .collect()
     }
 }
 
@@ -39,6 +100,10 @@ impl Tree {
             is_mine,
             is_dormant,
         }
+    }
+
+    pub fn not_dormant(&self) -> bool {
+        return !self.is_dormant;
     }
 }
 

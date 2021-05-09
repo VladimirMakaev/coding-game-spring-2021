@@ -1,17 +1,164 @@
-use std::{iter::FromIterator, str::FromStr, usize};
+use std::{collections::HashMap, iter::FromIterator, str::FromStr, u8, usize};
 
 use crate::common::ParseError;
 
+pub struct Delta {
+    dx: i8,
+    dy: i8,
+    dz: i8,
+}
+
+impl Delta {
+    pub fn new(dx: i8, dy: i8, dz: i8) -> Self {
+        Delta { dx, dy, dz }
+    }
+}
+
+pub fn index_to_coord(index: u8) -> CubeCoord {
+    match index {
+        0 => CubeCoord::new(0, 0, 0),
+        1 => CubeCoord::new(1, -1, 0),
+        2 => CubeCoord::new(1, 0, -1),
+        3 => CubeCoord::new(0, 1, -1),
+        4 => CubeCoord::new(-1, 1, 0),
+        5 => CubeCoord::new(-1, 0, 1),
+        6 => CubeCoord::new(0, -1, 1),
+        7 => CubeCoord::new(2, -2, 0),
+        8 => CubeCoord::new(2, -1, -1),
+        9 => CubeCoord::new(2, 0, -2),
+        10 => CubeCoord::new(1, 1, -2),
+        11 => CubeCoord::new(0, 2, -2),
+        12 => CubeCoord::new(-1, 2, -1),
+        13 => CubeCoord::new(-2, 2, 0),
+        14 => CubeCoord::new(-2, 1, 1),
+        15 => CubeCoord::new(-2, 0, 2),
+        16 => CubeCoord::new(-1, -1, 2),
+        17 => CubeCoord::new(0, -2, 2),
+        18 => CubeCoord::new(1, -2, 1),
+        19 => CubeCoord::new(3, -3, 0),
+        20 => CubeCoord::new(3, -2, -1),
+        21 => CubeCoord::new(3, -1, -2),
+        22 => CubeCoord::new(3, 0, -3),
+        23 => CubeCoord::new(2, 1, -3),
+        24 => CubeCoord::new(1, 2, -3),
+        25 => CubeCoord::new(0, 3, -3),
+        26 => CubeCoord::new(-1, 3, -2),
+        27 => CubeCoord::new(-2, 3, -1),
+        28 => CubeCoord::new(-3, 3, 0),
+        29 => CubeCoord::new(-3, 2, 1),
+        30 => CubeCoord::new(-3, 1, 2),
+        31 => CubeCoord::new(-3, 0, 3),
+        32 => CubeCoord::new(-2, -1, 3),
+        33 => CubeCoord::new(-1, -2, 3),
+        34 => CubeCoord::new(0, -3, 3),
+        35 => CubeCoord::new(1, -3, 2),
+        36 => CubeCoord::new(2, -3, 1),
+        _ => todo!(),
+    }
+}
+
+pub fn delta(orientation: u8) -> Delta {
+    match orientation {
+        0 => Delta::new(1, -1, 0),
+        1 => Delta::new(1, 0, -1),
+        2 => Delta::new(0, 1, -1),
+        3 => Delta::new(-1, 1, 0),
+        4 => Delta::new(-1, 0, 1),
+        5 => Delta::new(0, -1, 1),
+        _ => panic!(
+            "Invalid orientation {}. Can only be a value of 0..5",
+            orientation
+        ),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CubeCoord {
+    pub x: i8,
+    pub y: i8,
+    pub z: i8,
+}
+
+impl CubeCoord {
+    pub fn new(x: i8, y: i8, z: i8) -> CubeCoord {
+        Self { x, y, z }
+    }
+
+    pub fn distance_to(&self, point: CubeCoord) -> u8 {
+        std::cmp::max(
+            (point.x - self.x).abs() as u8,
+            std::cmp::max(
+                (point.y - self.y).abs() as u8,
+                (point.z - self.z).abs() as u8,
+            ),
+        )
+    }
+
+    pub fn at_distance(&self, orientation: u8, distance: u8) -> CubeCoord {
+        let delta = delta(orientation);
+        Self::new(
+            self.x + (delta.dx * (distance as i8)),
+            self.y + (delta.dy * (distance as i8)),
+            self.z + (delta.dz * (distance as i8)),
+        )
+    }
+
+    pub fn ring_iter(&self, radius: u8) -> impl Iterator<Item = CubeCoord> {
+        let mut result = Vec::<CubeCoord>::new();
+        let mut next = self.at_distance(0, radius);
+        for orientation_offset in 0..6 {
+            for _step in 0..radius {
+                result.push(next);
+                next = next.at_distance(Self::to_orientation(2 + orientation_offset), 1);
+            }
+        }
+        result.into_iter()
+    }
+
+    fn to_orientation(step: u8) -> u8 {
+        step % 6
+    }
+}
+
 pub struct Board {
+    by_coord: HashMap<CubeCoord, u8>,
     cells: Vec<Cell>,
 }
 
 impl Board {
+    fn build_coord_map() -> HashMap<CubeCoord, u8> {
+        (0..37u8).map(|i| (index_to_coord(i), i)).collect()
+    }
+
+    pub fn new(cells: Vec<Cell>) -> Self {
+        Self {
+            cells,
+            by_coord: Self::build_coord_map(),
+        }
+    }
+
+    pub fn get_by(&self, coord: CubeCoord) -> &Cell {
+        let i = self.by_coord[&coord];
+        return self.cells.get(i as usize).unwrap();
+    }
+
+    pub fn get_neighbors_from(&self, from_index: u8, distance: u8) -> impl Iterator<Item = &Cell> {
+        let center = CubeCoord::new(0, 0, 0);
+        let start = index_to_coord(from_index);
+        (1..distance + 1)
+            .map(move |r| start.ring_iter(r))
+            .flatten()
+            .filter(move |c| c.distance_to(center) <= 3)
+            .map(move |c| self.get_by(c))
+            .into_iter()
+    }
+
     pub fn get_richness(&self, i: u8) -> u8 {
         self.cells[i as usize].richness
     }
 
-    pub fn default() -> Self {
+    pub fn default_with_inactive(inactive_cells: impl Iterator<Item = u8>) -> Self {
+        let inactive_vec: Vec<_> = inactive_cells.collect();
         let default_matrix = vec![
             "0 3 1 2 3 4 5 6",
             "1 3 7 8 2 0 6 18",
@@ -54,15 +201,23 @@ impl Board {
         return default_matrix
             .into_iter()
             .map(|x| x.parse::<Cell>().unwrap())
+            .map(|mut c| {
+                if inactive_vec.contains(&c.index) {
+                    c.richness = 0
+                }
+                c
+            })
             .collect();
+    }
+
+    pub fn default() -> Self {
+        Self::default_with_inactive(Vec::new().into_iter())
     }
 }
 
 impl FromIterator<Cell> for Board {
     fn from_iter<T: IntoIterator<Item = Cell>>(iter: T) -> Self {
-        Board {
-            cells: iter.into_iter().collect(),
-        }
+        Board::new(iter.into_iter().collect())
     }
 }
 
@@ -70,8 +225,8 @@ type Edge = Option<u8>;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Cell {
-    index: u8,
-    richness: u8,
+    pub index: u8,
+    pub richness: u8,
     neig_0: Edge,
     neig_1: Edge,
     neig_2: Edge,
@@ -136,6 +291,8 @@ impl FromStr for Cell {
 
 #[cfg(test)]
 mod tests {
+    use std::cell;
+
     use super::*;
 
     #[test]
@@ -160,5 +317,68 @@ mod tests {
     fn default_exists() {
         let board = Board::default();
         assert_eq!(board.cells.len(), 37);
+    }
+
+    #[test]
+    fn test_coordinates_at_distance() {
+        let start = CubeCoord::new(0, 0, 0);
+        assert_eq!(CubeCoord::new(0, 3, -3), start.at_distance(2, 3));
+
+        let start = CubeCoord::new(2, -3, 1);
+        assert_eq!(CubeCoord::new(1, -3, 2), start.at_distance(4, 1));
+
+        let start = CubeCoord::new(-2, 0, 2);
+        assert_eq!(CubeCoord::new(0, -2, 2), start.at_distance(0, 2));
+
+        let start = CubeCoord::new(2, 0, -2);
+        assert_eq!(CubeCoord::new(1, 1, -2), start.at_distance(3, 1));
+    }
+
+    #[test]
+    fn test_cicle() {
+        let start = CubeCoord::new(0, 0, 0);
+        let ring: Vec<CubeCoord> = start.ring_iter(2).collect();
+        assert_eq!(
+            vec![
+                CubeCoord::new(2, -2, 0),
+                CubeCoord::new(2, -1, -1),
+                CubeCoord::new(2, 0, -2),
+                CubeCoord::new(1, 1, -2),
+                CubeCoord::new(0, 2, -2),
+                CubeCoord::new(-1, 2, -1),
+                CubeCoord::new(-2, 2, 0),
+                CubeCoord::new(-2, 1, 1),
+                CubeCoord::new(-2, 0, 2),
+                CubeCoord::new(-1, -1, 2),
+                CubeCoord::new(0, -2, 2),
+                CubeCoord::new(1, -2, 1),
+            ],
+            ring
+        );
+    }
+
+    #[test]
+    fn print_mapping() {
+        let mut index = 1;
+        let start = CubeCoord::new(0, 0, 0);
+        for radius in 1..4 {
+            for coor in start.ring_iter(radius) {
+                println!(
+                    "{} => CubeCoord::new({},{},{}),",
+                    index, coor.x, coor.y, coor.z
+                );
+                index += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn test_neighbors() {
+        let board = Board::default();
+        let cells: Vec<_> = board.get_neighbors_from(27, 1).map(|c| c.index).collect();
+        assert_eq!(vec![12, 26, 28, 13], cells);
+
+        let cells: Vec<_> = board.get_neighbors_from(33, 2).map(|c| c.index).collect();
+        assert_eq!(vec![34, 17, 16, 32, 35, 18, 6, 5, 15, 31], cells);
     }
 }

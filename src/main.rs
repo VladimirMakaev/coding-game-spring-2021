@@ -6,6 +6,7 @@ pub mod parse;
 mod tree;
 use actions::*;
 use board::{Board, Cell};
+use itertools::{assert_equal, Itertools};
 use parse::*;
 
 use crate::{game::Game, tree::Tree};
@@ -57,6 +58,17 @@ fn main() {
             sun_points,
             day,
         );
+        /*
+        actions.sort();
+        let expected_actions: Vec<_> = Action::find_next_actions(&game, true)
+            .into_iter()
+            .sorted()
+            .collect();
+
+        assert_equal(&actions, &expected_actions);
+        */
+
+        eprintln!("{}", &game);
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
