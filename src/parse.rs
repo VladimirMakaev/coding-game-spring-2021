@@ -30,7 +30,7 @@ where
 
     pub fn read_many_from(s: &str) -> Vec<T> {
         s.split(' ')
-            .flat_map(|x| <T as FromStr>::from_str(x))
+            .map(|x| <T as FromStr>::from_str(x).unwrap())
             .collect()
     }
 }

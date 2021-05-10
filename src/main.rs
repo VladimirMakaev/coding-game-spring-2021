@@ -3,7 +3,10 @@ mod board;
 pub mod common;
 mod game;
 pub mod parse;
+mod simulation;
 mod tree;
+use std::time::Instant;
+
 use actions::*;
 use board::{Board, Cell};
 use itertools::{assert_equal, Itertools};
@@ -24,6 +27,13 @@ fn main() {
     }
 
     let board: Board = cells.into_iter().collect();
+    let new = Instant::now();
+    let limit = 5_000_000;
+    let mut states = Vec::with_capacity(limit);
+    for i in 0..limit {
+        states.push(Game::empty());
+    }
+    eprintln!("Init state in {}ms ", new.elapsed().as_millis());
 
     // game loop
     loop {
@@ -32,7 +42,7 @@ fn main() {
         let inputs: Vec<u16> = Next::read_many();
         let sun_points = inputs[0]; // your sun points
         let score = inputs[1]; // your current score
-        let inputs: Vec<i32> = Next::read_many();
+        let inputs: Vec<u16> = Next::read_many();
         let opp_sun = inputs[0]; // opponent's sun points
         let opp_score = inputs[1]; // opponent's score
         let opp_is_waiting = inputs[2]; // whether your opponent is asleep until the next day
@@ -52,10 +62,10 @@ fn main() {
         }
 
         let game = Game::new(
-            &board,
             trees.into_iter().collect(),
             nutrients,
             sun_points,
+            opp_sun,
             day,
         );
         /*
@@ -74,6 +84,9 @@ fn main() {
         // To debug: eprintln!("Debug message...");
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
-        println!("{}", game::get_next_action_wood(&game, &actions));
+        println!(
+            "{}",
+            game::get_next_action_wood(&game, &Board::default(), &actions)
+        );
     }
 }

@@ -27,6 +27,7 @@ impl Tree {
     }
 }
 
+#[derive(Clone)]
 pub struct TreeCollection {
     trees: HashMap<u8, Tree>,
     trees_by_size: Vec<u8>,
@@ -72,6 +73,13 @@ impl TreeCollection {
 
     pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
         self.trees.iter().filter(|(i, t)| t.is_mine).map(|(_, t)| t)
+    }
+
+    pub fn iter_trees_for(&self, is_player: bool) -> impl Iterator<Item = &Tree> {
+        self.trees
+            .iter()
+            .filter(move |(i, t)| t.is_mine == is_player)
+            .map(|(_, t)| t)
     }
 
     #[cfg(test)]
