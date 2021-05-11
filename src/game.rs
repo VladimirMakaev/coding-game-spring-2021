@@ -1,9 +1,12 @@
+use core::panic;
 use std::{cmp::Ordering, collections::HashMap, fmt::Display, u8};
+
+use itertools::{Iterate, Itertools};
 
 use crate::{
     actions::Action,
-    board::{self, Board},
-    tree::TreeCollection,
+    board::{self, index_to_coord, Board},
+    tree::{self, Tree, TreeCollection},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,13 +15,21 @@ pub struct Shadow {
     size: u8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Game {
     //board: &'a board::Board,
     trees: TreeCollection,
     pub nutrients: u16,
+
     my_sun_points: u16,
     enemy_sun_points: u16,
+
+    my_points: u16,
+    enemy_points: u16,
+
+    player_waiting: bool,
+    opponent_waiting: bool,
+
     pub day: u8,
 }
 
@@ -52,6 +63,10 @@ impl Game {
             my_sun_points,
             enemy_sun_points,
             day,
+            enemy_points: 0,
+            my_points: 0,
+            opponent_waiting: false,
+            player_waiting: false,
         }
     }
 
@@ -74,16 +89,162 @@ impl Game {
             enemy_sun_points: 0,
             my_sun_points: 0,
             nutrients: 0,
-            trees: TreeCollection::new(HashMap::new()),
+            trees: TreeCollection::new(Vec::new()),
+            enemy_points: 0,
+            my_points: 0,
+            opponent_waiting: false,
+            player_waiting: false,
         }
     }
 
-    pub fn find_shadows(&self) -> HashMap<u8, Shadow> {
-        todo!()
+    fn find_shadows_by<'a, 'b>(
+        &self,
+        board: &'a Board,
+        tree_index: u8,
+    ) -> impl Iterator<Item = u8> + 'b
+    where
+        'a: 'b,
+    {
+        let tree = self.trees().get(tree_index);
+        let sun_orientation = self.day % 6;
+        board
+            .get_line(index_to_coord(tree.index()), tree.size(), sun_orientation)
+            .map(|x| x.index)
+            .into_iter()
     }
 
-    pub fn apply_action(&self, action: Action) -> Game {
-        todo!()
+    pub fn find_shadows(&self, board: &Board) -> HashMap<u8, Shadow> {
+        self.trees
+            .iter()
+            .map(|t| {
+                self.find_shadows_by(board, t.index()).map(move |s| {
+                    (
+                        s,
+                        Shadow {
+                            index: s,
+                            size: t.size(),
+                        },
+                    )
+                })
+            })
+            .flatten()
+            .sorted_by_key(|x| x.1.size)
+            .collect()
+    }
+
+    fn pay_action_cost(&mut self, board: &Board, action: Action, is_player: bool) {
+        let cost = Action::get_action_cost(self, board, action, is_player);
+        if is_player {
+            self.my_sun_points -= cost as u16;
+        } else {
+            self.enemy_points -= cost as u16;
+        }
+    }
+
+    fn increase_points(&mut self, points: u16, is_player: bool) {
+        match is_player {
+            true => self.my_points += points,
+            false => self.enemy_points += points,
+        }
+    }
+
+    fn richness_to_points(richness: u8) -> u16 {
+        match richness {
+            1 => 0,
+            2 => 2,
+            3 => 4,
+            _ => panic!(
+                "richness of a tree can only be 1, 2 and 3. Got: {}",
+                richness
+            ),
+        }
+    }
+
+    fn complete_tree(&mut self, board: &Board, tree_index: u8, is_player: bool) {
+        let richness = board.get_richness(tree_index);
+        self.trees.remove(tree_index);
+        self.increase_points(
+            self.nutrients + Self::richness_to_points(richness),
+            is_player,
+        );
+    }
+
+    fn apply_action_on_clone(&mut self, board: &Board, action: Action, is_player: bool) {
+        match (action, is_player) {
+            (Action::WAIT, true) => self.player_waiting = true,
+            (Action::WAIT, false) => self.opponent_waiting = true,
+            (Action::COMPLETE(t), _) => {
+                self.pay_action_cost(board, action, is_player);
+                self.complete_tree(board, t, is_player);
+                self.nutrients -= 1;
+            }
+            (Action::GROW(_), true) => {}
+            (Action::GROW(_), false) => {}
+            (Action::SEED(_, _), true) => {}
+            (Action::SEED(_, _), false) => {}
+        }
+    }
+
+    fn apply_seed_collision(&self, player_from: u8, enemy_from: u8) -> Game {
+        let mut new_state = self.clone();
+        new_state.trees.get_mut(player_from).set_dormant(true);
+        new_state.trees.get_mut(enemy_from).set_dormant(true);
+        return new_state;
+    }
+
+    pub fn apply_actions(&self, board: &Board, player: Action, enemy: Action) -> Game {
+        match (player, enemy) {
+            (Action::SEED(player_from, x), Action::SEED(enemy_from, y)) if x == y => {
+                self.apply_seed_collision(player_from, enemy_from)
+            }
+            (Action::COMPLETE(x), Action::COMPLETE(y)) => {
+                let mut new_state = self.clone();
+                new_state.pay_action_cost(board, player, true);
+                new_state.pay_action_cost(board, enemy, false);
+                new_state.complete_tree(board, x, true);
+                new_state.complete_tree(board, y, false);
+                new_state.nutrients -= 1;
+                new_state
+            }
+            (Action::WAIT, Action::WAIT) => self.apply_new_day(board),
+            (player, enemy) => {
+                let mut new_state = self.clone();
+                new_state.apply_action_on_clone(board, player, true);
+                new_state.apply_action_on_clone(board, enemy, false);
+                return new_state;
+            }
+        }
+    }
+
+    fn collect_sun_points(&mut self, points: u8, is_player: bool) {
+        if is_player {
+            self.my_sun_points += points as u16;
+        } else {
+            self.enemy_sun_points += points as u16;
+        }
+    }
+
+    fn apply_sun_points_for(&mut self, board: &Board, is_player: bool) {
+        let opponent_shadows = self.find_shadows(board);
+        let sun_trees: Vec<_> = self
+            .trees
+            .iter_trees_for(is_player)
+            .filter(|t| match (&opponent_shadows.get(&t.index()), t.size()) {
+                (Some(s), tree_size) if s.size >= tree_size => false,
+                (_, _) => true,
+            })
+            .map(|x| (x.index(), x.size()))
+            .collect();
+        for (_, size) in sun_trees {
+            self.collect_sun_points(size, is_player);
+        }
+    }
+
+    pub fn apply_new_day(&self, board: &Board) -> Game {
+        let mut new_state = self.clone();
+        new_state.apply_sun_points_for(board, true);
+        new_state.apply_sun_points_for(board, false);
+        new_state
     }
 }
 
@@ -156,6 +317,12 @@ fn greater_if_true(value: bool) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_hashmap() {
+        let hash: HashMap<u8, u8> = vec![(1, 10), (1, 100)].into_iter().collect();
+        assert_eq!(hash.get(&1), Some(&100u8));
+    }
     #[test]
     fn get_next_action_wood_sorts_as_expected() {
         let x = get_next_action_wood(
@@ -166,4 +333,7 @@ mod tests {
 
         assert_eq!(Action::COMPLETE(1), x);
     }
+
+    #[test]
+    fn test_game() {}
 }

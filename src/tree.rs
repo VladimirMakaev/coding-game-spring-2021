@@ -1,10 +1,12 @@
 use core::panic;
 use std::{collections::HashMap, iter::FromIterator, str::FromStr, string, usize};
 
+use itertools::Itertools;
+
 use crate::common::ParseError;
 use crate::parse::*;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Tree {
     index: u8,
     size: u8,
@@ -25,30 +27,47 @@ impl Tree {
     pub fn is_dormant(&self) -> bool {
         self.is_dormant
     }
+
+    pub fn set_dormant(&mut self, is_dormant: bool) {
+        self.is_dormant = is_dormant;
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TreeCollection {
-    trees: HashMap<u8, Tree>,
+    trees: Vec<Tree>,
     trees_by_size: Vec<u8>,
 }
 
 impl TreeCollection {
     pub fn empty() -> Self {
-        Self::new(HashMap::new())
+        Self::new(Vec::new())
+    }
+
+    pub fn remove(&mut self, index: u8) {
+        let position = self.trees.iter().find_position(|t| t.index == index);
+        if let Some((i, t)) = position {
+            let offset: usize = if t.is_mine { 0 } else { 4 };
+            self.trees_by_size[offset + t.size as usize] -= 1;
+            self.trees.remove(i);
+        }
     }
 
     pub fn get(&self, index: u8) -> &Tree {
-        self.trees.get(&index).unwrap()
+        self.trees.iter().find(|t| t.index == index).unwrap()
+    }
+
+    pub fn get_mut(&mut self, index: u8) -> &mut Tree {
+        self.trees.iter_mut().find(|t| t.index == index).unwrap()
     }
 
     pub fn has_at(&self, index: u8) -> bool {
-        self.trees.contains_key(&index)
+        self.trees.iter().any(|t| t.index == index)
     }
 
-    pub fn new(map: HashMap<u8, Tree>) -> Self {
+    pub fn new(map: Vec<Tree>) -> Self {
         let mut trees_by_size: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
-        for (_, t) in &map {
+        for t in &map {
             match (t.is_mine, t.size) {
                 (true, x) if x <= 3 => trees_by_size[t.size as usize] += 1,
                 (false, y) if y <= 3 => trees_by_size[t.size as usize + 4] += 1,
@@ -72,14 +91,15 @@ impl TreeCollection {
     }
 
     pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
-        self.trees.iter().filter(|(i, t)| t.is_mine).map(|(_, t)| t)
+        self.trees.iter().filter(|t| t.is_mine)
     }
 
     pub fn iter_trees_for(&self, is_player: bool) -> impl Iterator<Item = &Tree> {
-        self.trees
-            .iter()
-            .filter(move |(i, t)| t.is_mine == is_player)
-            .map(|(_, t)| t)
+        self.trees.iter().filter(move |t| t.is_mine == is_player)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Tree> {
+        self.trees.iter()
     }
 
     #[cfg(test)]
@@ -96,7 +116,7 @@ impl TreeCollection {
 
 impl FromIterator<Tree> for TreeCollection {
     fn from_iter<T: IntoIterator<Item = Tree>>(iter: T) -> Self {
-        TreeCollection::new(iter.into_iter().map(|t| (t.index, t)).collect())
+        TreeCollection::new(iter.into_iter().collect())
     }
 }
 

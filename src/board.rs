@@ -1,4 +1,6 @@
-use std::{collections::HashMap, iter::FromIterator, str::FromStr, u8, usize};
+use std::{cell, collections::HashMap, iter::FromIterator, str::FromStr, u8, usize};
+
+use itertools::Iterate;
 
 use crate::common::ParseError;
 
@@ -140,6 +142,20 @@ impl Board {
     pub fn get_by(&self, coord: CubeCoord) -> &Cell {
         let i = self.by_coord[&coord];
         return self.cells.get(i as usize).unwrap();
+    }
+
+    pub fn get_line(
+        &self,
+        start: CubeCoord,
+        size: u8,
+        orientation: u8,
+    ) -> impl Iterator<Item = &Cell> {
+        let center = CubeCoord::new(0, 0, 0);
+        (0..size)
+            .map(move |distance| start.at_distance(orientation, distance))
+            .filter(move |c| c.distance_to(center) <= 3)
+            .map(move |c| self.get_by(c))
+            .into_iter()
     }
 
     pub fn get_neighbors_from(&self, from_index: u8, distance: u8) -> impl Iterator<Item = &Cell> {
