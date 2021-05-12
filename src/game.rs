@@ -1,5 +1,10 @@
 use core::panic;
-use std::{cmp::Ordering, collections::HashMap, fmt::Display, u8};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::{Debug, Display},
+    u8,
+};
 
 use itertools::{Iterate, Itertools};
 
@@ -33,16 +38,24 @@ pub struct Game {
     pub day: u8,
 }
 
+impl Debug for Game {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl<'a> Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "(day: {}, trees: {}, player_sp: {}, enemy_sun_points: {}, nutrients: {})",
+            "(day: {}, trees: {}, player_sp: {}, enemy_sun_points: {}, nutrients: {}, player_points: {}, enemy_points: {})",
             self.day,
             self.trees.len(),
             self.get_sun_points(true),
             self.get_sun_points(false),
-            self.nutrients
+            self.nutrients,
+            self.my_points,
+            self.enemy_points
         )
     }
 }
@@ -54,6 +67,8 @@ impl Game {
         nutrients: u16,
         my_sun_points: u16,
         enemy_sun_points: u16,
+        my_score: u16,
+        enemy_score: u16,
         day: u8,
     ) -> Self {
         Self {
@@ -63,8 +78,8 @@ impl Game {
             my_sun_points,
             enemy_sun_points,
             day,
-            enemy_points: 0,
-            my_points: 0,
+            enemy_points: enemy_score,
+            my_points: my_score,
             opponent_waiting: false,
             player_waiting: false,
         }
@@ -169,6 +184,12 @@ impl Game {
         );
     }
 
+    pub fn apply_single_action(&self, board: &Board, action: Action, is_player: bool) -> Game {
+        let mut new_state = self.clone();
+        new_state.apply_action_on_clone(board, action, is_player);
+        new_state
+    }
+
     fn apply_action_on_clone(&mut self, board: &Board, action: Action, is_player: bool) {
         match (action, is_player) {
             (Action::WAIT, true) => self.player_waiting = true,
@@ -178,10 +199,13 @@ impl Game {
                 self.complete_tree(board, t, is_player);
                 self.nutrients -= 1;
             }
-            (Action::GROW(_), true) => {}
-            (Action::GROW(_), false) => {}
-            (Action::SEED(_, _), true) => {}
-            (Action::SEED(_, _), false) => {}
+            (Action::GROW(x), _) => {
+                self.trees.get_mut(x).grow_size();
+            }
+            (Action::SEED(from, to), is_player) => {
+                self.trees.seed(to, is_player);
+                self.trees.get_mut(from).set_dormant(true);
+            }
         }
     }
 
@@ -209,6 +233,8 @@ impl Game {
             (Action::WAIT, Action::WAIT) => self.apply_new_day(board),
             (player, enemy) => {
                 let mut new_state = self.clone();
+                new_state.pay_action_cost(board, player, true);
+                new_state.pay_action_cost(board, enemy, false);
                 new_state.apply_action_on_clone(board, player, true);
                 new_state.apply_action_on_clone(board, enemy, false);
                 return new_state;
@@ -242,6 +268,7 @@ impl Game {
 
     pub fn apply_new_day(&self, board: &Board) -> Game {
         let mut new_state = self.clone();
+        new_state.day += 1;
         new_state.apply_sun_points_for(board, true);
         new_state.apply_sun_points_for(board, false);
         new_state
@@ -251,7 +278,13 @@ impl Game {
 pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -> Action {
     fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
         let can_wait = game.get_sun_points(true) < 3;
-        let start_chopping = game.nutrients < 18 || game.day > 15;
+        let start_chopping = game.nutrients < 18 || game.day > 18;
+        let state_next_day_left = game
+            .apply_single_action(board, *x, true)
+            .apply_new_day(board);
+        let state_next_day_right = game
+            .apply_single_action(board, *y, true)
+            .apply_new_day(board);
 
         match (x, y) {
             (Action::COMPLETE(a), Action::COMPLETE(b)) => compare_by_richness(game, board, *a, *b),
@@ -264,16 +297,19 @@ pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -
                     Ordering::Less
                 }
             }
-            (_, Action::WAIT) => compare(game, board, y, x).reverse(),
             (Action::COMPLETE(_), Action::GROW(_)) => greater_if_true(start_chopping),
-            (Action::GROW(_), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
-            (Action::GROW(x), Action::GROW(y)) => compare_by_richness(game, board, *x, *y),
+            (Action::GROW(x), Action::GROW(y)) => greater_if_true(
+                state_next_day_left.enemy_sun_points < state_next_day_right.enemy_sun_points,
+            ),
             (Action::COMPLETE(_), Action::SEED(_, _)) => greater_if_true(start_chopping),
             (Action::SEED(_, a), Action::SEED(_, b)) => compare_by_richness(game, board, *a, *b),
             (Action::GROW(_), Action::SEED(_, to)) if board.get_richness(*to) == 3 => {
                 Ordering::Less
             }
             (Action::GROW(_), Action::SEED(_, to)) => Ordering::Greater,
+
+            (Action::GROW(_), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
+            (_, Action::WAIT) => compare(game, board, y, x).reverse(),
             (Action::SEED(_, _), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
             (Action::SEED(_, _), Action::GROW(_)) => compare(game, board, y, x).reverse(),
         }
@@ -316,7 +352,39 @@ fn greater_if_true(value: bool) -> Ordering {
 
 #[cfg(test)]
 mod tests {
+    use crate::parse::Next;
+
     use super::*;
+
+    fn parse_from_strings(input: Vec<&str>) -> Game {
+        let mut i = 0;
+        let day: u8 = Next::read_from(&input, &mut i); // the game lasts 24 days: 0-23
+        let nutrients: u16 = Next::read_from(&input, &mut i); // the base score you gain from the next COMPLETE action
+        let values: Vec<u16> = Next::read_many_from(input[i]);
+        i += 1;
+        let sun_points = values[0]; // your sun points
+        let score = values[1];
+        let values: Vec<u16> = Next::read_many_from(input[i]);
+        i += 1;
+        let opp_sun = values[0]; // opponent's sun points
+        let opp_score = values[1];
+        let opp_is_waiting: u16 = values[2];
+
+        let number_of_trees: i32 = Next::read_from(&input, &mut i); // the current amount of trees
+        let mut trees = Vec::<Tree>::new();
+        for _i in 0..number_of_trees as usize {
+            trees.push(Next::read_from(&input, &mut i));
+        }
+        return Game::new(
+            trees.into_iter().collect(),
+            nutrients,
+            sun_points,
+            opp_sun,
+            score,
+            opp_score,
+            day,
+        );
+    }
 
     #[test]
     fn test_hashmap() {
@@ -326,7 +394,7 @@ mod tests {
     #[test]
     fn get_next_action_wood_sorts_as_expected() {
         let x = get_next_action_wood(
-            &Game::new(TreeCollection::empty(), 10, 10, 10, 1),
+            &Game::new(TreeCollection::empty(), 10, 10, 10, 0, 0, 1),
             &Board::default(),
             &vec![Action::WAIT, Action::COMPLETE(20), Action::COMPLETE(1)],
         );
@@ -335,5 +403,23 @@ mod tests {
     }
 
     #[test]
-    fn test_game() {}
+    fn test_moves_ahead() {
+        let board = Board::default();
+        let game_str = vec![
+            "10", "20", "3 0", "4 0 1", "15", "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
+            "4 2 0 0", "5 2 0 0", "6 2 1 1", "10 0 1 0", "14 1 0 0", "17 1 0 0", "18 1 1 1",
+            "21 3 1 0", "26 3 1 0", "30 1 0 0", "35 1 0 0",
+        ];
+        let game = parse_from_strings(game_str);
+
+        let new_state = game.apply_actions(&board, Action::SEED(21, 11), Action::WAIT);
+
+        let expected_state = parse_from_strings(vec![
+            "10", "20", "2 0", "4 0 1", "16", "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
+            "4 2 0 0", "5 2 0 0", "6 2 1 1", "10 0 1 0", "11 0 1 1", "14 1 0 0", "17 1 0 0",
+            "18 1 1 1", "21 3 1 1", "26 3 1 0", "30 1 0 0", "35 1 0 0",
+        ]);
+
+        assert_eq!(new_state, expected_state);
+    }
 }

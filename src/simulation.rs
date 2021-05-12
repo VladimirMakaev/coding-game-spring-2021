@@ -210,7 +210,7 @@ mod tests {
         let mut vec = Vec::with_capacity(limit);
         let trees: TreeCollection = TreeCollection::from_strings(vec!["5 2 1 0"]);
         let board = Board::default();
-        let game = Game::new(trees, 20, 10, 20, 10);
+        let game = Game::new(trees, 20, 10, 20, 0, 0, 10);
         for i in 0..limit {
             vec.push(game.clone());
         }

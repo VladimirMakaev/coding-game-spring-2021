@@ -1,5 +1,5 @@
 use crate::{
-    board::{index_to_coord, Board, Cell},
+    board::{Board, Cell},
     common::ParseError,
     game::Game,
     tree::Tree,
@@ -164,7 +164,7 @@ mod tests {
         let trees =
             TreeCollection::from_strings(vec!["21 1 1 0", "27 1 0 0", "30 1 0 0", "36 1 1 0"]);
         let board = Board::default();
-        let game = Game::new(trees, 20, 2, 10, 0);
+        let game = Game::new(trees, 20, 2, 10, 0, 0, 0);
         let expected_actions: Vec<Action> = vec![
             "WAIT",
             "SEED 36 7",
@@ -194,7 +194,7 @@ mod tests {
             "36 2 1 0",
         ]);
         let board = Board::default_with_inactive(vec![25, 23, 32, 34].into_iter());
-        let game = Game::new(trees, 20, 11, 10, 7);
+        let game = Game::new(trees, 20, 11, 10, 0, 0, 7);
         let expected_actions: Vec<Action> = vec![
             "WAIT",
             "COMPLETE 21",
@@ -241,7 +241,7 @@ mod tests {
             "31 1 0 0", "34 1 0 0",
         ]);
         let board = Board::default_with_inactive(vec![25, 23, 32, 34].into_iter());
-        let game = Game::new(trees, 20, 10, 10, 9);
+        let game = Game::new(trees, 20, 10, 10, 0, 0, 9);
         let expected_actions: Vec<Action> = vec!["WAIT"]
             .into_iter()
             .flat_map(|x| x.parse::<Action>())
@@ -261,7 +261,7 @@ mod tests {
             "9 1 0 0", "18 0 0 0", "22 1 0 0", "36 1 0 0",
         ]);
         let board = Board::default_with_inactive(vec![26, 10, 21, 30, 16, 35].into_iter());
-        let game = Game::new(trees, 17, 7, 2, 11);
+        let game = Game::new(trees, 17, 7, 2, 0, 0, 11);
         let expected_actions: Vec<Action> = vec![
             "WAIT",
             "GROW 5",
@@ -307,7 +307,7 @@ mod tests {
             "14 0 1 0", "16 0 1 0", "18 1 0 0", "20 1 0 0", "35 1 0 0",
         ]);
         let board = Board::default_with_inactive(vec![25, 11, 27, 26, 17, 34].into_iter());
-        let game = Game::new(trees, 17, 2, 2, 11);
+        let game = Game::new(trees, 17, 2, 2, 0, 0, 11);
         let expected_actions = vec!["WAIT", "GROW 16", "GROW 14", "SEED 4 13", "SEED 4 12"]
             .into_iter()
             .flat_map(|x| x.parse::<Action>())
@@ -329,7 +329,7 @@ mod tests {
             "20 1 0 0", "35 1 0 0", "5 3 1 1", "14 0 1 0", "16 0 1 0", "4 1 1 0",
         ]);
         let board = Board::default_with_inactive(vec![25, 11, 27, 26, 17, 34].into_iter());
-        let game = Game::new(trees, 17, 2, 6, 11);
+        let game = Game::new(trees, 17, 2, 6, 0, 0, 11);
         let expected_grow = vec![
             "GROW 1", "GROW 2", "GROW 3", "GROW 7", "GROW 8", "GROW 18", "GROW 20", "GROW 35",
         ]

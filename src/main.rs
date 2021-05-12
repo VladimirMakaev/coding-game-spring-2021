@@ -27,14 +27,15 @@ fn main() {
     }
 
     let board: Board = cells.into_iter().collect();
-    let new = Instant::now();
-    let limit = 5_000_000;
-    let mut states = Vec::with_capacity(limit);
-    for i in 0..limit {
-        states.push(Game::empty());
-    }
-    eprintln!("Init state in {}ms ", new.elapsed().as_millis());
-
+    /*
+        let new = Instant::now();
+        let limit = 5_000_000;
+        let mut states = Vec::with_capacity(limit);
+        for i in 0..limit {
+            states.push(Game::empty());
+        }
+        eprintln!("Init state in {}ms ", new.elapsed().as_millis());
+    */
     // game loop
     loop {
         let day: u8 = Next::read(); // the game lasts 24 days: 0-23
@@ -66,6 +67,8 @@ fn main() {
             nutrients,
             sun_points,
             opp_sun,
+            score,
+            opp_score,
             day,
         );
         /*

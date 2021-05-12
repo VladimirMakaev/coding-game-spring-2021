@@ -1,4 +1,4 @@
-use std::{fmt::Debug, io::stdin};
+use std::{fmt::Debug, io::stdin, usize};
 use std::{marker::PhantomData, str::FromStr};
 
 pub struct Next<T> {
@@ -10,6 +10,12 @@ where
     T: FromStr,
     <T as FromStr>::Err: Debug,
 {
+    pub fn read_from(lines: &Vec<&str>, index: &mut usize) -> T {
+        let result = <T as FromStr>::from_str(lines[*index]);
+        *index += 1;
+        result.unwrap()
+    }
+
     fn read_line() -> String {
         let mut buffer = String::new();
         let _ = stdin().read_line(&mut buffer).unwrap();

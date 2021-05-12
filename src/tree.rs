@@ -1,17 +1,29 @@
 use core::panic;
-use std::{collections::HashMap, iter::FromIterator, str::FromStr, string, usize};
+use std::{
+    collections::HashMap,
+    fmt::{write, Debug},
+    iter::FromIterator,
+    str::FromStr,
+    string, usize,
+};
 
 use itertools::Itertools;
 
 use crate::common::ParseError;
 use crate::parse::*;
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct Tree {
     index: u8,
     size: u8,
     is_mine: bool,
     is_dormant: bool,
+}
+
+impl Debug for Tree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(index:{}, size:{})", self.index, self.size)
+    }
 }
 
 impl Tree {
@@ -31,17 +43,39 @@ impl Tree {
     pub fn set_dormant(&mut self, is_dormant: bool) {
         self.is_dormant = is_dormant;
     }
+
+    pub fn grow_size(&mut self) {
+        self.size += 1;
+        self.set_dormant(true);
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TreeCollection {
+    _trees: Vec<Option<Tree>>,
     trees: Vec<Tree>,
     trees_by_size: Vec<u8>,
 }
 
+impl Debug for TreeCollection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "trees: {:?}", self.trees)
+    }
+}
+
 impl TreeCollection {
+    fn size_index(index: u8, is_player: bool) -> usize {
+        let offset: usize = if is_player { 0 } else { 4 };
+        return offset + index as usize;
+    }
+
     pub fn empty() -> Self {
         Self::new(Vec::new())
+    }
+
+    pub fn seed(&mut self, index: u8, is_player: bool) {
+        self.trees.push(Tree::new(index, 0, is_player, true));
+        self.trees_by_size[Self::size_index(0, is_player)] += 1;
     }
 
     pub fn remove(&mut self, index: u8) {
@@ -76,6 +110,7 @@ impl TreeCollection {
         }
 
         Self {
+            _trees: Vec::with_capacity(37),
             trees: map,
             trees_by_size,
         }
