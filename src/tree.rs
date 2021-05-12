@@ -22,7 +22,11 @@ pub struct Tree {
 
 impl Debug for Tree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(index:{}, size:{})", self.index, self.size)
+        write!(
+            f,
+            "(index:{}, size:{}, is_mine:{}, is_dormant:{})",
+            self.index, self.size, self.is_mine, self.is_dormant
+        )
     }
 }
 
@@ -43,25 +47,20 @@ impl Tree {
     pub fn set_dormant(&mut self, is_dormant: bool) {
         self.is_dormant = is_dormant;
     }
-
-    pub fn grow_size(&mut self) {
-        self.size += 1;
-        self.set_dormant(true);
-    }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TreeCollection {
-    _trees: Vec<Option<Tree>>,
-    trees: Vec<Tree>,
+    trees: Vec<Option<Tree>>,
     trees_by_size: Vec<u8>,
 }
 
+/*
 impl Debug for TreeCollection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "trees: {:?}", self.trees)
     }
-}
+}*/
 
 impl TreeCollection {
     fn size_index(index: u8, is_player: bool) -> usize {
@@ -74,44 +73,71 @@ impl TreeCollection {
     }
 
     pub fn seed(&mut self, index: u8, is_player: bool) {
-        self.trees.push(Tree::new(index, 0, is_player, true));
+        self.trees[index as usize] = Some(Tree::new(index, 0, is_player, true));
         self.trees_by_size[Self::size_index(0, is_player)] += 1;
     }
 
     pub fn remove(&mut self, index: u8) {
-        let position = self.trees.iter().find_position(|t| t.index == index);
-        if let Some((i, t)) = position {
-            let offset: usize = if t.is_mine { 0 } else { 4 };
-            self.trees_by_size[offset + t.size as usize] -= 1;
-            self.trees.remove(i);
+        if let Some(item) = self.trees.swap_remove(index as usize) {
+            self.trees_by_size[Self::size_index(index, item.is_mine)] -= 1;
+            self.trees[index as usize] = None;
         }
     }
 
     pub fn get(&self, index: u8) -> &Tree {
-        self.trees.iter().find(|t| t.index == index).unwrap()
+        if let Some(Some(ref x)) = self.trees.get(index as usize) {
+            return x;
+        }
+        panic!("Invalid index");
     }
 
     pub fn get_mut(&mut self, index: u8) -> &mut Tree {
-        self.trees.iter_mut().find(|t| t.index == index).unwrap()
+        if let Some(Some(ref mut x)) = self.trees.get_mut(index as usize) {
+            return x;
+        }
+        panic!("Invalid index");
+    }
+
+    pub fn grow_size(&mut self, index: u8) {
+        if let Some(ref mut x) = self.trees.get_mut(index as usize).unwrap() {
+            x.size += 1;
+            x.is_dormant = true;
+            self.trees_by_size[Self::size_index(x.size, x.is_mine)] += 1;
+            self.trees_by_size[Self::size_index(x.size - 1, x.is_mine)] -= 1;
+        }
+    }
+
+    pub fn wake_up(&mut self) {
+        for item in self.trees.iter_mut() {
+            if let Some(ref mut t) = item {
+                t.set_dormant(false);
+            }
+        }
     }
 
     pub fn has_at(&self, index: u8) -> bool {
-        self.trees.iter().any(|t| t.index == index)
+        if let Some(Some(_)) = self.trees.get(index as usize) {
+            return true;
+        }
+        return false;
     }
 
     pub fn new(map: Vec<Tree>) -> Self {
         let mut trees_by_size: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
-        for t in &map {
+        let mut _trees: Vec<Option<Tree>> = (0..37).map(|_| None).collect_vec();
+
+        for t in map {
             match (t.is_mine, t.size) {
                 (true, x) if x <= 3 => trees_by_size[t.size as usize] += 1,
                 (false, y) if y <= 3 => trees_by_size[t.size as usize + 4] += 1,
                 _ => panic!("Incorrect size: {} for is_mine: {}", t.size, t.is_mine),
             }
+            let i = t.index();
+            _trees[i as usize] = Some(t);
         }
 
         Self {
-            _trees: Vec::with_capacity(37),
-            trees: map,
+            trees: _trees,
             trees_by_size,
         }
     }
@@ -126,15 +152,18 @@ impl TreeCollection {
     }
 
     pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
-        self.trees.iter().filter(|t| t.is_mine)
+        self.trees.iter().flatten().filter(|t| t.is_mine)
     }
 
     pub fn iter_trees_for(&self, is_player: bool) -> impl Iterator<Item = &Tree> {
-        self.trees.iter().filter(move |t| t.is_mine == is_player)
+        self.trees
+            .iter()
+            .flatten()
+            .filter(move |t| t.is_mine == is_player)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Tree> {
-        self.trees.iter()
+        self.trees.iter().flatten()
     }
 
     #[cfg(test)]
@@ -190,11 +219,45 @@ impl FromStr for Tree {
 
 #[cfg(test)]
 mod tests {
+    use crate::tree;
+
     use super::*;
 
     #[test]
     fn it_parses() {
         let t = "29 1 1 0".parse::<Tree>();
         assert_eq!(t, Ok(Tree::new(29, 1, true, false)))
+    }
+
+    #[test]
+    fn it_works() {
+        let mut trees: TreeCollection = vec![
+            "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0", "4 2 0 0", "5 2 0 0", "6 2 1 1",
+            "10 0 1 0", "11 0 1 1", "14 1 0 0", "17 1 0 0", "18 1 1 1", "21 3 1 1", "26 3 1 0",
+            "30 1 0 0", "35 1 0 0",
+        ]
+        .into_iter()
+        .map(|t| t.parse())
+        .flatten()
+        .collect();
+
+        assert_eq!(
+            trees.my_trees().map(|x| x.index()).collect_vec(),
+            vec![0, 1, 2, 3, 6, 10, 11, 18, 21, 26]
+        );
+
+        assert_eq!(trees.get_amount_of_size(2, true), 3);
+        assert_eq!(trees.get_amount_of_size(2, false), 2);
+
+        trees.grow_size(1);
+
+        assert_eq!(trees.get(1).size(), 2);
+
+        assert_eq!(trees.get_amount_of_size(1, false), 4);
+
+        assert_eq!(
+            trees.iter_trees_for(true).map(|x| x.index()).collect_vec(),
+            vec![0, 1, 2, 3, 6, 10, 11, 18, 21, 26]
+        )
     }
 }

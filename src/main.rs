@@ -70,6 +70,7 @@ fn main() {
             score,
             opp_score,
             day,
+            opp_is_waiting == 1,
         );
         /*
         actions.sort();

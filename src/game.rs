@@ -10,8 +10,8 @@ use itertools::{Iterate, Itertools};
 
 use crate::{
     actions::Action,
-    board::{self, index_to_coord, Board},
-    tree::{self, Tree, TreeCollection},
+    board::{index_to_coord, Board},
+    tree::TreeCollection,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub struct Shadow {
     size: u8,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Game {
     //board: &'a board::Board,
     trees: TreeCollection,
@@ -32,30 +32,30 @@ pub struct Game {
     my_points: u16,
     enemy_points: u16,
 
-    player_waiting: bool,
     opponent_waiting: bool,
 
     pub day: u8,
 }
-
+/*
 impl Debug for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
-}
+}*/
 
 impl<'a> Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "(day: {}, trees: {}, player_sp: {}, enemy_sun_points: {}, nutrients: {}, player_points: {}, enemy_points: {})",
+            "(day: {}, trees: {:?}, player_sp: {}, enemy_sun_points: {}, nutrients: {}, player_points: {}, enemy_points: {}, op_waiting: {})",
             self.day,
-            self.trees.len(),
+            self.trees,
             self.get_sun_points(true),
             self.get_sun_points(false),
             self.nutrients,
             self.my_points,
-            self.enemy_points
+            self.enemy_points,
+            self.opponent_waiting
         )
     }
 }
@@ -70,6 +70,7 @@ impl Game {
         my_score: u16,
         enemy_score: u16,
         day: u8,
+        opponent_waiting: bool,
     ) -> Self {
         Self {
             //board,
@@ -80,8 +81,7 @@ impl Game {
             day,
             enemy_points: enemy_score,
             my_points: my_score,
-            opponent_waiting: false,
-            player_waiting: false,
+            opponent_waiting: opponent_waiting,
         }
     }
 
@@ -108,7 +108,6 @@ impl Game {
             enemy_points: 0,
             my_points: 0,
             opponent_waiting: false,
-            player_waiting: false,
         }
     }
 
@@ -152,7 +151,7 @@ impl Game {
         if is_player {
             self.my_sun_points -= cost as u16;
         } else {
-            self.enemy_points -= cost as u16;
+            self.enemy_sun_points -= cost as u16;
         }
     }
 
@@ -192,15 +191,14 @@ impl Game {
 
     fn apply_action_on_clone(&mut self, board: &Board, action: Action, is_player: bool) {
         match (action, is_player) {
-            (Action::WAIT, true) => self.player_waiting = true,
+            (Action::WAIT, true) => {}
             (Action::WAIT, false) => self.opponent_waiting = true,
             (Action::COMPLETE(t), _) => {
-                self.pay_action_cost(board, action, is_player);
                 self.complete_tree(board, t, is_player);
                 self.nutrients -= 1;
             }
             (Action::GROW(x), _) => {
-                self.trees.get_mut(x).grow_size();
+                self.trees.grow_size(x);
             }
             (Action::SEED(from, to), is_player) => {
                 self.trees.seed(to, is_player);
@@ -216,7 +214,18 @@ impl Game {
         return new_state;
     }
 
+    fn force_wait_when_no_points(&self, board: &Board, action: Action, sun_points: u16) -> Action {
+        if Action::get_action_cost(self, board, action, false) as u16 > sun_points {
+            Action::WAIT
+        } else {
+            action
+        }
+    }
+
     pub fn apply_actions(&self, board: &Board, player: Action, enemy: Action) -> Game {
+        let player = self.force_wait_when_no_points(board, player, self.my_sun_points);
+        let enemy = self.force_wait_when_no_points(board, enemy, self.enemy_sun_points);
+
         match (player, enemy) {
             (Action::SEED(player_from, x), Action::SEED(enemy_from, y)) if x == y => {
                 self.apply_seed_collision(player_from, enemy_from)
@@ -251,11 +260,11 @@ impl Game {
     }
 
     fn apply_sun_points_for(&mut self, board: &Board, is_player: bool) {
-        let opponent_shadows = self.find_shadows(board);
+        let all_shadows = self.find_shadows(board);
         let sun_trees: Vec<_> = self
             .trees
             .iter_trees_for(is_player)
-            .filter(|t| match (&opponent_shadows.get(&t.index()), t.size()) {
+            .filter(|t| match (&all_shadows.get(&t.index()), t.size()) {
                 (Some(s), tree_size) if s.size >= tree_size => false,
                 (_, _) => true,
             })
@@ -271,6 +280,8 @@ impl Game {
         new_state.day += 1;
         new_state.apply_sun_points_for(board, true);
         new_state.apply_sun_points_for(board, false);
+        new_state.opponent_waiting = false;
+        new_state.trees.wake_up();
         new_state
     }
 }
@@ -352,7 +363,7 @@ fn greater_if_true(value: bool) -> Ordering {
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::Next;
+    use crate::{parse::Next, tree::Tree};
 
     use super::*;
 
@@ -383,6 +394,7 @@ mod tests {
             score,
             opp_score,
             day,
+            opp_is_waiting == 1,
         );
     }
 
@@ -394,7 +406,7 @@ mod tests {
     #[test]
     fn get_next_action_wood_sorts_as_expected() {
         let x = get_next_action_wood(
-            &Game::new(TreeCollection::empty(), 10, 10, 10, 0, 0, 1),
+            &Game::new(TreeCollection::empty(), 10, 10, 10, 0, 0, 1, false),
             &Board::default(),
             &vec![Action::WAIT, Action::COMPLETE(20), Action::COMPLETE(1)],
         );
@@ -412,14 +424,21 @@ mod tests {
         ];
         let game = parse_from_strings(game_str);
 
-        let new_state = game.apply_actions(&board, Action::SEED(21, 11), Action::WAIT);
+        let game = game.apply_actions(&board, Action::SEED(21, 11), Action::WAIT);
+        let game = game.apply_actions(&board, Action::WAIT, Action::WAIT);
+        let game = game.apply_actions(&board, Action::GROW(10), Action::GROW(14));
+        let game = game.apply_actions(&board, Action::GROW(0), Action::GROW(17));
+        let game = game.apply_actions(&board, Action::WAIT, Action::WAIT);
+        let game = game.apply_actions(&board, Action::GROW(18), Action::GROW(17));
+        let game = game.apply_actions(&board, Action::GROW(11), Action::GROW(4));
+        let game = game.apply_actions(&board, Action::WAIT, Action::WAIT);
 
         let expected_state = parse_from_strings(vec![
-            "10", "20", "2 0", "4 0 1", "16", "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
-            "4 2 0 0", "5 2 0 0", "6 2 1 1", "10 0 1 0", "11 0 1 1", "14 1 0 0", "17 1 0 0",
-            "18 1 1 1", "21 3 1 1", "26 3 1 0", "30 1 0 0", "35 1 0 0",
+            "13", "20", "9 0", "9 0 0", "16", "0 2 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
+            "4 2 0 0", "5 2 0 0", "6 2 1 0", "10 1 1 0", "11 1 1 0", "14 2 0 0", "17 2 0 0",
+            "18 2 1 0", "21 3 1 0", "26 3 1 0", "30 1 0 0", "35 1 0 0",
         ]);
 
-        assert_eq!(new_state, expected_state);
+        assert_eq!(game, expected_state);
     }
 }

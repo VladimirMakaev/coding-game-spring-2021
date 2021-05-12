@@ -151,7 +151,7 @@ impl Board {
         orientation: u8,
     ) -> impl Iterator<Item = &Cell> {
         let center = CubeCoord::new(0, 0, 0);
-        (0..size)
+        (1..size + 1)
             .map(move |distance| start.at_distance(orientation, distance))
             .filter(move |c| c.distance_to(center) <= 3)
             .map(move |c| self.get_by(c))
