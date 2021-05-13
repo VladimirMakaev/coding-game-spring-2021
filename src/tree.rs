@@ -78,9 +78,8 @@ impl TreeCollection {
     }
 
     pub fn remove(&mut self, index: u8) {
-        if let Some(item) = self.trees.swap_remove(index as usize) {
-            self.trees_by_size[Self::size_index(index, item.is_mine)] -= 1;
-            self.trees[index as usize] = None;
+        if let Some(t) = std::mem::replace(&mut self.trees[index as usize], None) {
+            self.trees_by_size[Self::size_index(t.size, t.is_mine)] -= 1;
         }
     }
 
@@ -230,6 +229,23 @@ mod tests {
     }
 
     #[test]
+    fn test_seed_tree() {
+        let mut trees: TreeCollection = vec![Tree::new(0, 1, true, false)].into_iter().collect();
+        trees.seed(1, true);
+        assert_eq!(trees.get(1), &Tree::new(1, 0, true, true));
+        assert_eq!(trees.get_amount_of_size(1, true), 1);
+        assert_eq!(trees.get_amount_of_size(0, true), 1);
+    }
+
+    #[test]
+    fn test_complete_tree() {
+        let mut trees: TreeCollection = vec![Tree::new(20, 3, true, false)].into_iter().collect();
+        trees.remove(20);
+        assert_eq!(trees.has_at(3), false);
+        assert_eq!(trees.get_amount_of_size(3, true), 0);
+    }
+
+    #[test]
     fn it_works() {
         let mut trees: TreeCollection = vec![
             "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0", "4 2 0 0", "5 2 0 0", "6 2 1 1",
@@ -258,6 +274,11 @@ mod tests {
         assert_eq!(
             trees.iter_trees_for(true).map(|x| x.index()).collect_vec(),
             vec![0, 1, 2, 3, 6, 10, 11, 18, 21, 26]
-        )
+        );
+        trees.remove(18);
+        assert_eq!(
+            trees.iter_trees_for(true).map(|x| x.index()).collect_vec(),
+            vec![0, 1, 2, 3, 6, 10, 11, 21, 26]
+        );
     }
 }

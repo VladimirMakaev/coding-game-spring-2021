@@ -1,12 +1,15 @@
 use std::{cmp::Ordering, collections::HashMap, f64::consts::SQRT_2, u32, usize};
 
+use itertools::Itertools;
+
 use crate::{actions::Action, board::Board, game::Game};
 
 pub struct Simulation<'a> {
     board: &'a Board,
+    player_nodes: Vec<PlayerNode>,
+    enemy_nodes: Vec<EnemyNode>,
     free_nodes: Vec<usize>,
     free_games: Vec<usize>,
-    nodes: Vec<Node>,
     states: Vec<State>,
     state_by_games: HashMap<&'a Game, u32>,
     current_state: u32,
@@ -14,180 +17,428 @@ pub struct Simulation<'a> {
 
 impl<'a> Simulation<'a> {
     pub fn new(board: &'a Board, game: Game) -> Self {
-        Self {
-            current_state: todo!(),
+        let mut result = Self {
+            current_state: 0,
             board: board,
             free_nodes: Vec::new(),
-            nodes: Vec::new(),
             states: Vec::new(),
             state_by_games: HashMap::new(),
             free_games: Vec::new(),
-        }
+            player_nodes: Vec::new(),
+            enemy_nodes: Vec::new(),
+        };
+        result.current_state = result.create_state(game, None).0;
+        result.states[0].picks = 1;
+        return result;
     }
 
-    fn init_state(game: Game) -> u32 {
-        todo!()
+    fn get_moves_summary(&self) -> impl Iterator<Item = &PlayerNode> {
+        let state = State::get_node(self.current_state, &self);
+        state
+            .children()
+            .map(move |c| Self::get_node::<State>(self, *c))
+            .into_iter()
     }
 
-    fn create_state(&mut self, game: Game) -> u32 {
+    fn create_state(&mut self, game: Game, parent: Option<u32>) -> (u32, &State) {
         let state_id = self.states.len() as u32;
         let enemy_moves = Action::find_next_actions(&game, self.board, false);
         let player_moves = Action::find_next_actions(&game, self.board, true);
         let mut player_moves_ids = Vec::new();
         for i in 0..player_moves.len() {
-            self.nodes
-                .push(Node::new(state_id, state_id, player_moves[i], true));
-            let mut enemy_ids = Vec::new();
-            let player_move_id = (self.nodes.len() - 1) as u32;
-            player_moves_ids.push(player_move_id);
-            for j in 0..enemy_moves.len() {
-                self.nodes
-                    .push(Node::new(state_id, player_move_id, enemy_moves[j], false));
-                enemy_ids.push(self.nodes.len() as u32 - 1);
-            }
+            player_moves_ids.push(PlayerNode::create(
+                state_id,
+                self,
+                player_moves[i],
+                enemy_moves.clone(),
+            ));
         }
         // self.state_by_games.insert(&game, state_id);
 
-        self.states.push(State {
+        let value = State {
             child_nodes: player_moves_ids,
             game: game,
             picks: 0,
             wins: 0,
-        });
-        return state_id;
-    }
-
-    pub fn set_current_state(&mut self, game: Game) {
-        if let Some(state_index) = self.state_by_games.get(&game) {
-            self.current_state = *state_index;
-        } else {
-            self.create_state(game);
-        }
-    }
-
-    fn pick_node_by_ucb(&self, parent_id: u32, is_player: bool) -> (u32, &Node) {
-        let (parent_picks, nodes) = if is_player {
-            let s = &self.states[parent_id as usize];
-            (s.picks, &s.child_nodes)
-        } else {
-            let s = &self.nodes[parent_id as usize];
-            (s.picks, &s.child_nodes)
+            parent: parent,
         };
-        let id = nodes
-            .into_iter()
-            .max_by(|x, y| {
-                self.nodes[**x as usize]
-                    .ucb(parent_picks)
-                    .partial_cmp(&self.nodes[**y as usize].ucb(parent_picks))
-                    .unwrap_or(Ordering::Equal)
+        self.states.push(value);
+        return (state_id, &self.states[self.states.len() - 1]);
+    }
+
+    fn get_node<'b, T: HasChildren>(sim: &'b Simulation, id: u32) -> &'b T::Child {
+        <<T as HasChildren>::Child as GameNode>::get_node(id, sim)
+    }
+
+    fn pick_node_by_ucb_2<T: HasChildren + GameNode>(&self, node: &T) -> (u32, &T::Child) {
+        let max_child = node
+            .children()
+            .max_by(|x_id, y_id| {
+                let ucb1 = Self::get_node::<T>(self, **x_id).ucb(self);
+                let ucb2 = Self::get_node::<T>(self, **y_id).ucb(self);
+                ucb1.partial_cmp(&ucb2).unwrap_or(Ordering::Equal)
             })
             .unwrap();
-        (*id, &self.nodes[*id as usize])
+        (*max_child, Self::get_node::<T>(self, *max_child))
+    }
+
+    fn create_next_game(sim: &Simulation, node: &EnemyNode) -> Game {
+        let (_, player_node) = node.get_parent(sim);
+        let (_, parent_state) = node.get_state(sim);
+        let game = parent_state
+            .game
+            .apply_actions(sim.board, player_node.action, node.action);
+        game
+    }
+
+    fn get_or_create_next_state(&mut self, enemy_id: u32) -> u32 {
+        let ref enemy_node = self.enemy_nodes[enemy_id as usize];
+
+        if let Some(next_state) = enemy_node.next_state {
+            return next_state;
+        }
+        let new_game = Self::create_next_game(self, enemy_node);
+        let (state_id, _) = self.create_state(new_game, Some(enemy_id));
+
+        state_id
     }
 
     pub fn simulate(&mut self, state: u32) {
-        let state_node = self.states.get_mut(state as usize).unwrap();
-        let (p_id, player_node) = self.pick_node_by_ucb(state, true);
-        let (e_id, enemy_node) = self.pick_node_by_ucb(p_id, false);
+        let mut state_id = state;
+        loop {
+            let state = State::get_node(state_id, self);
 
-        let next_state: u32 = todo!();
-        let state: &mut State = todo!();
+            let (_, player_node) = Self::pick_node_by_ucb_2(&self, state);
+            let (enemy_id, _) = Self::pick_node_by_ucb_2(&self, player_node);
+            let next_state_id = self.get_or_create_next_state(enemy_id);
+            let next_state = State::get_node(next_state_id, self);
 
-        if state.game.day == 25 {
-            //is finished
-            if state.game.get_sun_points(true) > 100 { //player won
-                 //update_score(1)
-            } else {
-                //update.score(0)
+            let ref next_game = next_state.game;
+
+            if next_game.day == 24 {
+                let player_won = next_game.is_player_won();
+                self.on_player_won(next_state_id, player_won);
+                break;
             }
-        } else {
-            self.simulate(next_state);
+            state_id = next_state_id;
+        }
+    }
+
+    pub fn mark_enemy(&mut self, enemy_id: u32, is_player_won: bool) {
+        let node = self.enemy_nodes.get_mut(enemy_id as usize).unwrap();
+        node.picks += 1;
+        if !is_player_won {
+            node.wins += 1;
+        }
+    }
+
+    pub fn mark_player(&mut self, player_id: u32, is_player_won: bool) {
+        let node = self.player_nodes.get_mut(player_id as usize).unwrap();
+        node.picks += 1;
+        if is_player_won {
+            node.wins += 1;
+        }
+    }
+
+    pub fn mark_state(&mut self, state_id: u32, is_player_won: bool) {
+        let node = self.states.get_mut(state_id as usize).unwrap();
+        node.picks += 1;
+
+        if is_player_won {
+            node.wins += 1;
+        }
+    }
+
+    pub fn on_player_won(&mut self, node_id: u32, is_player_won: bool) {
+        let mut current_node_id = node_id;
+        loop {
+            if current_node_id == self.current_state {
+                break;
+            }
+            let (enemy_id, _) = State::get_node(current_node_id, self).get_parent(self);
+            self.mark_enemy(enemy_id, is_player_won);
+            let (player_id, _) = EnemyNode::get_node(enemy_id, self).get_parent(self);
+            self.mark_player(player_id, is_player_won);
+            let (next_state_id, _) = PlayerNode::get_node(player_id, self).get_parent(self);
+            self.mark_state(next_state_id, is_player_won);
+            current_node_id = next_state_id;
         }
     }
 }
 
+#[derive(Debug)]
 pub struct State {
     game: Game,
     child_nodes: Vec<u32>,
+    parent: Option<u32>,
     wins: u32,
     picks: u32,
 }
 
-pub struct Node {
-    action: Action,
-    wins: u32,
-    picks: u32,
-    parent: u32,
-    game: u32,
-    is_player: bool,
-    child_nodes: Vec<u32>,
-}
+trait HasChildren {
+    type Child: GameNode;
 
-impl Node {
-    pub fn new(game_id: u32, parent_action: u32, action: Action, is_player: bool) -> Self {
-        Node {
-            action,
-            wins: 0,
-            picks: 0,
-            parent: parent_action,
-            child_nodes: Vec::new(),
-            game: game_id,
-            is_player: is_player,
-        }
-    }
-    pub fn visited(&self) -> bool {
-        self.picks > 0
-    }
-
-    pub fn ucb(&self, parent_picks: u32) -> f64 {
-        if self.picks == 0 {
-            f64::MAX
-        } else {
-            (self.wins as f64 / self.picks as f64)
-                + SQRT_2 * ((parent_picks as f64).ln() / self.picks as f64).sqrt()
-        }
-    }
+    fn children(&self) -> std::slice::Iter<'_, u32>;
 }
 
 trait GameNode {
     type Parent: GameNode;
 
-    fn wins() -> u32;
+    fn wins(&self) -> u32;
 
-    fn picks() -> u32;
+    fn picks(&self) -> u32;
 
-    fn get_parent(&self, simulation: &Simulation) -> (u32, &Self::Parent);
+    fn get_node<'a>(node_id: u32, sim: &'a Simulation) -> &'a Self;
 
-    fn get_state(&self, simulation: &Simulation) -> (u32, &State);
+    fn get_node_mut<'a>(node_id: u32, sim: &'a mut Simulation) -> &'a mut Self;
+
+    fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent);
+
+    fn ucb(&self, simulation: &Simulation) -> f64 {
+        if self.picks() == 0 {
+            return f64::MAX;
+        }
+
+        let (_, parent) = self.get_parent(simulation);
+        return (self.wins() as f64 / self.picks() as f64)
+            + SQRT_2 * ((parent.picks() as f64).ln() / self.picks() as f64).sqrt();
+    }
 }
 
+#[derive(Debug)]
 pub struct PlayerNode {
     action: Action,
     parent_state: u32,
+    enemy_moves: Vec<u32>,
     wins: u32,
     picks: u32,
 }
 
+impl HasChildren for PlayerNode {
+    fn children(&self) -> std::slice::Iter<'_, u32> {
+        return self.enemy_moves.iter();
+    }
+
+    type Child = EnemyNode;
+}
+
+impl PlayerNode {
+    pub fn new() -> PlayerNode {
+        todo!()
+    }
+    pub fn create(
+        state_id: u32,
+        sim: &mut Simulation,
+        player_move: Action,
+        enemy_moves: Vec<Action>,
+    ) -> u32 {
+        let this_id = sim.player_nodes.len() as u32;
+
+        let result = PlayerNode {
+            action: player_move,
+            enemy_moves: enemy_moves
+                .into_iter()
+                .enumerate()
+                .map(|(i, enemy_action)| {
+                    sim.enemy_nodes
+                        .push(EnemyNode::new(this_id, state_id, enemy_action));
+                    return sim.enemy_nodes.len() as u32 - 1;
+                })
+                .collect_vec(),
+            parent_state: state_id,
+            picks: 0,
+            wins: 0,
+        };
+        sim.player_nodes.push(result);
+
+        return this_id;
+    }
+
+    fn get_state<'a>(&self, simulation: &'a Simulation) -> (u32, &'a State) {
+        self.get_parent(simulation)
+    }
+}
+
+impl GameNode for State {
+    type Parent = EnemyNode;
+
+    fn wins(&self) -> u32 {
+        self.wins
+    }
+
+    fn picks(&self) -> u32 {
+        self.picks
+    }
+
+    fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent) {
+        let ref node = simulation.enemy_nodes[self.parent.unwrap() as usize];
+        (self.parent.unwrap(), node)
+    }
+
+    fn get_node<'a>(node_id: u32, sim: &'a Simulation) -> &'a Self {
+        let ref state = sim.states[node_id as usize];
+        state
+    }
+
+    fn get_node_mut<'a>(node_id: u32, sim: &'a mut Simulation) -> &'a mut Self {
+        sim.states.get_mut(node_id as usize).unwrap()
+    }
+}
+
+impl HasChildren for State {
+    fn children(&self) -> std::slice::Iter<'_, u32> {
+        self.child_nodes.iter()
+    }
+
+    type Child = PlayerNode;
+}
+
+impl GameNode for PlayerNode {
+    type Parent = State;
+
+    fn wins(&self) -> u32 {
+        self.wins
+    }
+
+    fn picks(&self) -> u32 {
+        self.picks
+    }
+
+    fn get_node<'a>(node_id: u32, sim: &'a Simulation) -> &'a Self {
+        let ref player = sim.player_nodes[node_id as usize];
+        player
+    }
+
+    fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent) {
+        let ref state = simulation.states[self.parent_state as usize];
+        (self.parent_state, state)
+    }
+
+    fn get_node_mut<'a>(node_id: u32, sim: &'a mut Simulation) -> &'a mut Self {
+        let node = sim.player_nodes.get_mut(node_id as usize).unwrap();
+        node
+    }
+}
+
+#[derive(Debug)]
 pub struct EnemyNode {
     action: Action,
     parent_action: u32,
     wins: u32,
     picks: u32,
     parent_state: u32,
+    next_state: Option<u32>,
+}
+
+impl EnemyNode {
+    pub fn new(parent_id: u32, parent_state: u32, action: Action) -> Self {
+        Self {
+            parent_action: parent_id,
+            parent_state,
+            action,
+            wins: 0,
+            picks: 0,
+            next_state: None,
+        }
+    }
+
+    fn create_next_game<'a>(&self, sim: &'a Simulation) -> Game {
+        let (_, parent_state) = self.get_state(sim);
+        let (_, player_node) = self.get_parent(sim);
+
+        let game = parent_state
+            .game
+            .apply_actions(sim.board, player_node.action, self.action);
+        game
+    }
+
+    fn get_state<'a>(&self, simulation: &'a Simulation) -> (u32, &'a State) {
+        (
+            self.parent_state,
+            &simulation.states[self.parent_state as usize],
+        )
+    }
+}
+
+impl GameNode for EnemyNode {
+    type Parent = PlayerNode;
+
+    fn wins(&self) -> u32 {
+        self.wins
+    }
+
+    fn picks(&self) -> u32 {
+        self.picks
+    }
+
+    fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent) {
+        let ref action = simulation.player_nodes[self.parent_action as usize];
+        (self.parent_action, action)
+    }
+
+    fn get_node<'a>(node_id: u32, sim: &'a Simulation) -> &'a Self {
+        &sim.enemy_nodes[node_id as usize]
+    }
+
+    fn get_node_mut<'a>(node_id: u32, sim: &'a mut Simulation) -> &'a mut Self {
+        let node = sim.enemy_nodes.get_mut(node_id as usize).unwrap();
+        node
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, mem::size_of};
+    use std::{cmp::Ordering, collections::HashMap, mem::size_of};
+
+    use itertools::Itertools;
 
     use crate::{
         board::Board,
         game::Game,
+        simulation::{GameNode, Simulation},
         tree::{Tree, TreeCollection},
     };
 
     #[test]
-    pub fn test_tree() {}
+    pub fn test_new_simulation() {
+        let board = Board::default_with_inactive(vec![28, 4, 3, 2, 6, 19].into_iter());
+        let game = Game::parse_from_strings(vec![
+            "0", "20", "2 0", "2 0 0", "4", "24 1 1 0", "27 1 1 0", "33 1 0 0", "36 1 0 0",
+        ]);
+        let sim = Simulation::new(&board, game);
+        assert_eq!(sim.current_state, 0);
+        assert_eq!(sim.player_nodes.len(), 8);
+        assert_eq!(sim.enemy_nodes.len(), 8 * 8);
+    }
+
+    #[test]
+    pub fn test_simulation() {
+        let board = Board::default();
+        let game = Game::parse_from_strings(vec![
+            "0", "20", "2 0", "2 0 0", "4", "24 1 1 0", "27 1 1 0", "33 1 0 0", "36 1 0 0",
+        ]);
+        let mut sim = Simulation::new(&board, game);
+        for _ in 0..100 {
+            sim.simulate(sim.current_state);
+        }
+        let moves = sim
+            .get_moves_summary()
+            .map(|x| {
+                (
+                    x.action,
+                    x.ucb(&sim),
+                    std::fmt::format(format_args!("{}/{}", x.wins, x.picks)),
+                )
+            })
+            .collect_vec();
+        /*
+        let turn = sim.get_moves_summary().max_by(|x, y| {
+            x.ucb(&sim)
+                .partial_cmp(&y.ucb(&sim))
+                .unwrap_or(Ordering::Less)
+        });*/
+        println!("{:?}", moves);
+    }
 
     #[test]
     pub fn debug_sizes() {

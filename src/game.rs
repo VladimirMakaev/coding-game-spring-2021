@@ -11,7 +11,8 @@ use itertools::{Iterate, Itertools};
 use crate::{
     actions::Action,
     board::{index_to_coord, Board},
-    tree::TreeCollection,
+    parse::Next,
+    tree::{Tree, TreeCollection},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +83,14 @@ impl Game {
             enemy_points: enemy_score,
             my_points: my_score,
             opponent_waiting: opponent_waiting,
+        }
+    }
+
+    pub fn get_points(&self, is_player: bool) -> u16 {
+        if is_player {
+            self.my_points
+        } else {
+            self.enemy_points
         }
     }
 
@@ -185,6 +194,7 @@ impl Game {
 
     pub fn apply_single_action(&self, board: &Board, action: Action, is_player: bool) -> Game {
         let mut new_state = self.clone();
+        new_state.pay_action_cost(board, action, is_player);
         new_state.apply_action_on_clone(board, action, is_player);
         new_state
     }
@@ -236,7 +246,7 @@ impl Game {
                 new_state.pay_action_cost(board, enemy, false);
                 new_state.complete_tree(board, x, true);
                 new_state.complete_tree(board, y, false);
-                new_state.nutrients -= 1;
+                new_state.nutrients -= 2;
                 new_state
             }
             (Action::WAIT, Action::WAIT) => self.apply_new_day(board),
@@ -284,15 +294,56 @@ impl Game {
         new_state.trees.wake_up();
         new_state
     }
+
+    pub fn parse_from_strings(input: Vec<&str>) -> Game {
+        let mut i = 0;
+        let day: u8 = Next::read_from(&input, &mut i); // the game lasts 24 days: 0-23
+        let nutrients: u16 = Next::read_from(&input, &mut i); // the base score you gain from the next COMPLETE action
+        let values: Vec<u16> = Next::read_many_from(input[i]);
+        i += 1;
+        let sun_points = values[0]; // your sun points
+        let score = values[1];
+        let values: Vec<u16> = Next::read_many_from(input[i]);
+        i += 1;
+        let opp_sun = values[0]; // opponent's sun points
+        let opp_score = values[1];
+        let opp_is_waiting: u16 = values[2];
+
+        let number_of_trees: i32 = Next::read_from(&input, &mut i); // the current amount of trees
+        let mut trees = Vec::<Tree>::new();
+        for _i in 0..number_of_trees as usize {
+            trees.push(Next::read_from(&input, &mut i));
+        }
+        return Game::new(
+            trees.into_iter().collect(),
+            nutrients,
+            sun_points,
+            opp_sun,
+            score,
+            opp_score,
+            day,
+            opp_is_waiting == 1,
+        );
+    }
+
+    pub fn is_player_won(&self) -> bool {
+        match self.my_points.cmp(&self.enemy_points) {
+            Ordering::Less => false,
+            Ordering::Equal => self.my_sun_points > self.enemy_points,
+            Ordering::Greater => true,
+        }
+    }
 }
 
 pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -> Action {
     fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
         let can_wait = game.get_sun_points(true) < 3;
         let start_chopping = game.nutrients < 18 || game.day > 18;
+
         let state_next_day_left = game
             .apply_single_action(board, *x, true)
             .apply_new_day(board);
+
         let state_next_day_right = game
             .apply_single_action(board, *y, true)
             .apply_new_day(board);
@@ -301,13 +352,7 @@ pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -
             (Action::COMPLETE(a), Action::COMPLETE(b)) => compare_by_richness(game, board, *a, *b),
             (Action::WAIT, Action::WAIT) => Ordering::Equal,
             (Action::WAIT, Action::GROW(_)) => Ordering::Less,
-            (Action::WAIT, _) => {
-                if can_wait {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            }
+            (Action::WAIT, _) => greater_if_true(can_wait),
             (Action::COMPLETE(_), Action::GROW(_)) => greater_if_true(start_chopping),
             (Action::GROW(x), Action::GROW(y)) => greater_if_true(
                 state_next_day_left.enemy_sun_points < state_next_day_right.enemy_sun_points,
@@ -367,37 +412,6 @@ mod tests {
 
     use super::*;
 
-    fn parse_from_strings(input: Vec<&str>) -> Game {
-        let mut i = 0;
-        let day: u8 = Next::read_from(&input, &mut i); // the game lasts 24 days: 0-23
-        let nutrients: u16 = Next::read_from(&input, &mut i); // the base score you gain from the next COMPLETE action
-        let values: Vec<u16> = Next::read_many_from(input[i]);
-        i += 1;
-        let sun_points = values[0]; // your sun points
-        let score = values[1];
-        let values: Vec<u16> = Next::read_many_from(input[i]);
-        i += 1;
-        let opp_sun = values[0]; // opponent's sun points
-        let opp_score = values[1];
-        let opp_is_waiting: u16 = values[2];
-
-        let number_of_trees: i32 = Next::read_from(&input, &mut i); // the current amount of trees
-        let mut trees = Vec::<Tree>::new();
-        for _i in 0..number_of_trees as usize {
-            trees.push(Next::read_from(&input, &mut i));
-        }
-        return Game::new(
-            trees.into_iter().collect(),
-            nutrients,
-            sun_points,
-            opp_sun,
-            score,
-            opp_score,
-            day,
-            opp_is_waiting == 1,
-        );
-    }
-
     #[test]
     fn test_hashmap() {
         let hash: HashMap<u8, u8> = vec![(1, 10), (1, 100)].into_iter().collect();
@@ -415,14 +429,34 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_moves() {
+        let board = Board::default();
+
+        let game_strs = vec![
+            "23", "8", "16 59", "7 155 0", "17", "0 1 1 0", "1 0 1 0", "2 1 1 0", "3 0 1 0",
+            "4 2 1 0", "5 2 1 0", "6 2 1 0", "7 2 1 0", "9 1 1 0", "11 0 1 0", "12 3 1 0",
+            "18 0 1 0", "19 3 0 0", "23 2 0 0", "25 2 0 0", "28 2 1 0", "32 2 1 0",
+        ];
+        let game = Game::parse_from_strings(game_strs);
+        let game = game.apply_actions(&board, Action::COMPLETE(12), Action::COMPLETE(19));
+
+        let expected_state = Game::parse_from_strings(vec![
+            "23", "6", "12 69", "3 163 0", "15", "0 1 1 0", "1 0 1 0", "2 1 1 0", "3 0 1 0",
+            "4 2 1 0", "5 2 1 0", "6 2 1 0", "7 2 1 0", "9 1 1 0", "11 0 1 0", "18 0 1 0",
+            "23 2 0 0", "25 2 0 0", "28 2 1 0", "32 2 1 0",
+        ]);
+        assert_eq!(game, expected_state);
+    }
+
+    #[test]
     fn test_moves_ahead() {
         let board = Board::default();
-        let game_str = vec![
+        let game_strs = vec![
             "10", "20", "3 0", "4 0 1", "15", "0 1 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
             "4 2 0 0", "5 2 0 0", "6 2 1 1", "10 0 1 0", "14 1 0 0", "17 1 0 0", "18 1 1 1",
             "21 3 1 0", "26 3 1 0", "30 1 0 0", "35 1 0 0",
         ];
-        let game = parse_from_strings(game_str);
+        let game = Game::parse_from_strings(game_strs);
 
         let game = game.apply_actions(&board, Action::SEED(21, 11), Action::WAIT);
         let game = game.apply_actions(&board, Action::WAIT, Action::WAIT);
@@ -433,7 +467,7 @@ mod tests {
         let game = game.apply_actions(&board, Action::GROW(11), Action::GROW(4));
         let game = game.apply_actions(&board, Action::WAIT, Action::WAIT);
 
-        let expected_state = parse_from_strings(vec![
+        let expected_state = Game::parse_from_strings(vec![
             "13", "20", "9 0", "9 0 0", "16", "0 2 1 0", "1 1 1 0", "2 2 1 0", "3 2 1 0",
             "4 2 0 0", "5 2 0 0", "6 2 1 0", "10 1 1 0", "11 1 1 0", "14 2 0 0", "17 2 0 0",
             "18 2 1 0", "21 3 1 0", "26 3 1 0", "30 1 0 0", "35 1 0 0",
