@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, f64::consts::SQRT_2, u32, usize};
 
 use itertools::Itertools;
 
-use crate::{actions::Action, board::Board, game::Game};
+use crate::{actions::Action, board::Board, common::random_max, game::Game};
 
 pub struct Simulation<'a> {
     board: &'a Board,
@@ -20,19 +20,19 @@ impl<'a> Simulation<'a> {
         let mut result = Self {
             current_state: 0,
             board: board,
-            free_nodes: Vec::new(),
-            states: Vec::new(),
+            free_nodes: Vec::with_capacity(1_000_000),
+            states: Vec::with_capacity(1_000_000),
             state_by_games: HashMap::new(),
-            free_games: Vec::new(),
-            player_nodes: Vec::new(),
-            enemy_nodes: Vec::new(),
+            free_games: Vec::with_capacity(1_000_000),
+            player_nodes: Vec::with_capacity(1_000_000),
+            enemy_nodes: Vec::with_capacity(1_000_000),
         };
         result.current_state = result.create_state(game, None).0;
         result.states[0].picks = 1;
         return result;
     }
 
-    fn get_moves_summary(&self) -> impl Iterator<Item = &PlayerNode> {
+    pub fn get_moves_summary(&self) -> impl Iterator<Item = &PlayerNode> {
         let state = State::get_node(self.current_state, &self);
         state
             .children()
@@ -70,15 +70,15 @@ impl<'a> Simulation<'a> {
         <<T as HasChildren>::Child as GameNode>::get_node(id, sim)
     }
 
+    fn compare_by_ucb<T: HasChildren + GameNode>(&self, x: u32, y: u32) -> Ordering {
+        let ucb1 = Self::get_node::<T>(self, x).ucb(self);
+        let ucb2 = Self::get_node::<T>(self, y).ucb(self);
+        ucb1.partial_cmp(&ucb2).unwrap_or(Ordering::Equal)
+    }
+
     fn pick_node_by_ucb_2<T: HasChildren + GameNode>(&self, node: &T) -> (u32, &T::Child) {
-        let max_child = node
-            .children()
-            .max_by(|x_id, y_id| {
-                let ucb1 = Self::get_node::<T>(self, **x_id).ucb(self);
-                let ucb2 = Self::get_node::<T>(self, **y_id).ucb(self);
-                ucb1.partial_cmp(&ucb2).unwrap_or(Ordering::Equal)
-            })
-            .unwrap();
+        let max_child =
+            random_max(node.children(), |x, y| self.compare_by_ucb::<T>(**x, **y)).unwrap();
         (*max_child, Self::get_node::<T>(self, *max_child))
     }
 
@@ -101,6 +101,10 @@ impl<'a> Simulation<'a> {
         let (state_id, _) = self.create_state(new_game, Some(enemy_id));
 
         state_id
+    }
+
+    pub fn simulate_current(&mut self) {
+        self.simulate(self.current_state);
     }
 
     pub fn simulate(&mut self, state: u32) {
@@ -175,13 +179,13 @@ pub struct State {
     picks: u32,
 }
 
-trait HasChildren {
+pub trait HasChildren {
     type Child: GameNode;
 
     fn children(&self) -> std::slice::Iter<'_, u32>;
 }
 
-trait GameNode {
+pub trait GameNode {
     type Parent: GameNode;
 
     fn wins(&self) -> u32;
@@ -207,11 +211,11 @@ trait GameNode {
 
 #[derive(Debug)]
 pub struct PlayerNode {
-    action: Action,
-    parent_state: u32,
-    enemy_moves: Vec<u32>,
-    wins: u32,
-    picks: u32,
+    pub action: Action,
+    pub parent_state: u32,
+    pub enemy_moves: Vec<u32>,
+    pub wins: u32,
+    pub picks: u32,
 }
 
 impl HasChildren for PlayerNode {
@@ -226,6 +230,7 @@ impl PlayerNode {
     pub fn new() -> PlayerNode {
         todo!()
     }
+
     pub fn create(
         state_id: u32,
         sim: &mut Simulation,
@@ -388,7 +393,12 @@ impl GameNode for EnemyNode {
 
 #[cfg(test)]
 mod tests {
-    use std::{cmp::Ordering, collections::HashMap, mem::size_of};
+    use std::{
+        cmp::Ordering,
+        collections::HashMap,
+        mem::size_of,
+        time::{Duration, Instant},
+    };
 
     use itertools::Itertools;
 
@@ -418,9 +428,11 @@ mod tests {
             "0", "20", "2 0", "2 0 0", "4", "24 1 1 0", "27 1 1 0", "33 1 0 0", "36 1 0 0",
         ]);
         let mut sim = Simulation::new(&board, game);
-        for _ in 0..100 {
+        let d = Instant::now();
+        for _ in 0..10 {
             sim.simulate(sim.current_state);
         }
+        println!("{} ms", Duration::as_millis(&d.elapsed()));
         let moves = sim
             .get_moves_summary()
             .map(|x| {

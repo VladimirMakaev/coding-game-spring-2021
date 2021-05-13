@@ -5,10 +5,15 @@ edition = "2018"
 name = "coding-game-spring-2021"
 version = "0.1.0"
 
+[[bin]]
+name = "bench"
+path = "src/bench.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 itertools = "0.10.0"
+rand = "0.8.3"
 
 [build-dependencies]
 bundle-rs = {git = "https://github.com/VladimirMakaev/bundle-rs.git", branch = "main"}
