@@ -53,7 +53,6 @@ impl<'a> Simulation<'a> {
                 enemy_moves.clone(),
             ));
         }
-        // self.state_by_games.insert(&game, state_id);
 
         let value = State {
             child_nodes: player_moves_ids,
@@ -62,7 +61,9 @@ impl<'a> Simulation<'a> {
             wins: 0,
             parent: parent,
         };
+
         self.states.push(value);
+
         return (state_id, &self.states[self.states.len() - 1]);
     }
 
@@ -103,11 +104,23 @@ impl<'a> Simulation<'a> {
         state_id
     }
 
-    pub fn simulate_current(&mut self) {
-        self.simulate(self.current_state);
+    pub fn simulate_current(&mut self, cache: &mut HashMap<Game, u32>) {
+        self.simulate(self.current_state, cache)
     }
 
-    pub fn simulate(&mut self, state: u32) {
+    fn cache_state(&self, cache: &mut HashMap<Game, u32>, state_id: u32) {
+        let game = &self.states[state_id as usize].game;
+        if !cache.contains_key(game) {
+            cache.insert(game.clone(), state_id);
+        }
+    }
+
+    pub fn set_current(&mut self, state: u32) {
+        self.current_state = state;
+    }
+
+    pub fn simulate(&mut self, state: u32, cache: &mut HashMap<Game, u32>) {
+        self.cache_state(cache, state);
         let mut state_id = state;
         loop {
             let state = State::get_node(state_id, self);
@@ -116,8 +129,8 @@ impl<'a> Simulation<'a> {
             let (enemy_id, _) = Self::pick_node_by_ucb_2(&self, player_node);
             let next_state_id = self.get_or_create_next_state(enemy_id);
             let next_state = State::get_node(next_state_id, self);
-
             let ref next_game = next_state.game;
+            self.cache_state(cache, next_state_id);
 
             if next_game.day == 24 {
                 let player_won = next_game.is_player_won();
@@ -198,13 +211,17 @@ pub trait GameNode {
 
     fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent);
 
+    fn mean_win(&self) -> f64 {
+        self.wins() as f64 / self.picks() as f64
+    }
+
     fn ucb(&self, simulation: &Simulation) -> f64 {
         if self.picks() == 0 {
             return f64::MAX;
         }
 
         let (_, parent) = self.get_parent(simulation);
-        return (self.wins() as f64 / self.picks() as f64)
+        return self.mean_win()
             + SQRT_2 * ((parent.picks() as f64).ln() / self.picks() as f64).sqrt();
     }
 }
@@ -429,8 +446,10 @@ mod tests {
         ]);
         let mut sim = Simulation::new(&board, game);
         let d = Instant::now();
+        let mut cache = HashMap::new();
+
         for _ in 0..10 {
-            sim.simulate(sim.current_state);
+            sim.simulate_current(cache);
         }
         println!("{} ms", Duration::as_millis(&d.elapsed()));
         let moves = sim

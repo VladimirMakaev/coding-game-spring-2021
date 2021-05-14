@@ -5,12 +5,18 @@ mod game;
 pub mod parse;
 mod simulation;
 mod tree;
-use std::time::Instant;
+use core::time;
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use actions::*;
 use board::{Board, Cell};
 use itertools::{assert_equal, Itertools};
 use parse::*;
+use simulation::*;
 
 use crate::{game::Game, tree::Tree};
 
@@ -26,7 +32,11 @@ fn main() {
         cells.push(cell);
     }
 
+    let mut time_allocation = 950;
     let board: Board = cells.into_iter().collect();
+    let mut cache = HashMap::new();
+    let mut sim = Simulation::new(&board, Game::empty());
+
     /*
         let new = Instant::now();
         let limit = 5_000_000;
@@ -72,25 +82,35 @@ fn main() {
             day,
             opp_is_waiting == 1,
         );
-        /*
-        actions.sort();
-        let expected_actions: Vec<_> = Action::find_next_actions(&game, true)
-            .into_iter()
-            .sorted()
-            .collect();
+        let timer = Instant::now();
+        if let Some(state_id) = cache.get(&game) {
+            sim.set_current(*state_id);
+        } else {
+            sim = Simulation::new(&board, game);
+        }
+        let mut counter = 0;
+        while Duration::as_millis(&timer.elapsed()) < time_allocation {
+            sim.simulate_current(&mut cache);
+            counter += 1;
+        }
 
-        assert_equal(&actions, &expected_actions);
-        */
-
-        eprintln!("{}", &game);
+        eprintln!("{} simulations", counter);
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
-        println!(
-            "{}",
-            game::get_next_action_wood(&game, &Board::default(), &actions)
-        );
+        let player_move = sim
+            .get_moves_summary()
+            .max_by(|x, y| {
+                x.mean_win()
+                    .partial_cmp(&y.mean_win())
+                    .unwrap_or(Ordering::Less)
+            })
+            .unwrap();
+
+        println!("{}", player_move.action);
+
+        time_allocation = 80;
     }
 }
