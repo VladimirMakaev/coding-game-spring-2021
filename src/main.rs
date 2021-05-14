@@ -111,6 +111,6 @@ fn main() {
 
         println!("{}", player_move.action);
 
-        time_allocation = 80;
+        time_allocation = 50;
     }
 }

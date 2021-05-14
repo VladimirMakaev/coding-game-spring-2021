@@ -42,20 +42,8 @@ impl<'a> Simulation<'a> {
 
     fn create_state(&mut self, game: Game, parent: Option<u32>) -> (u32, &State) {
         let state_id = self.states.len() as u32;
-        let enemy_moves = Action::find_next_actions(&game, self.board, false);
-        let player_moves = Action::find_next_actions(&game, self.board, true);
-        let mut player_moves_ids = Vec::new();
-        for i in 0..player_moves.len() {
-            player_moves_ids.push(PlayerNode::create(
-                state_id,
-                self,
-                player_moves[i],
-                enemy_moves.clone(),
-            ));
-        }
-
         let value = State {
-            child_nodes: player_moves_ids,
+            child_nodes: Vec::new(),
             game: game,
             picks: 0,
             wins: 0,
@@ -119,18 +107,55 @@ impl<'a> Simulation<'a> {
         self.current_state = state;
     }
 
+    fn ensure_player_nodes(&mut self, state_id: u32) {
+        let ref state = self.states[state_id as usize];
+        if state.child_nodes.len() == 0 {
+            let player_moves = Action::find_next_actions(&state.game, self.board, true);
+            for action in player_moves {
+                self.player_nodes.push(PlayerNode::new(state_id, action));
+                self.states[state_id as usize]
+                    .child_nodes
+                    .push(self.player_nodes.len() as u32 - 1);
+            }
+        }
+    }
+
+    fn ensure_enemy_nodes(&mut self, player_node_id: u32) {
+        let ref player_node = self.player_nodes[player_node_id as usize];
+
+        if player_node.enemy_moves.len() == 0 {
+            let state = State::get_node(player_node.parent_state, self);
+
+            let enemy_moves = Action::find_next_actions(&state.game, self.board, false);
+            for action in &enemy_moves {
+                self.enemy_nodes.push(EnemyNode::new(
+                    player_node_id,
+                    player_node.parent_state,
+                    *action,
+                ));
+            }
+            for id in 1u32..enemy_moves.len() as u32 + 1 {
+                self.player_nodes[player_node_id as usize]
+                    .enemy_moves
+                    .push(self.enemy_nodes.len() as u32 - id);
+            }
+        }
+    }
+
     pub fn simulate(&mut self, state: u32, cache: &mut HashMap<Game, u32>) {
-        self.cache_state(cache, state);
+        //self.cache_state(cache, state);
         let mut state_id = state;
         loop {
+            self.ensure_player_nodes(state_id);
             let state = State::get_node(state_id, self);
 
-            let (_, player_node) = Self::pick_node_by_ucb_2(&self, state);
-            let (enemy_id, _) = Self::pick_node_by_ucb_2(&self, player_node);
+            let (p_id, _) = Self::pick_node_by_ucb_2(&self, state);
+            self.ensure_enemy_nodes(p_id);
+            let (enemy_id, _) = Self::pick_node_by_ucb_2(&self, &self.player_nodes[p_id as usize]);
             let next_state_id = self.get_or_create_next_state(enemy_id);
             let next_state = State::get_node(next_state_id, self);
             let ref next_game = next_state.game;
-            self.cache_state(cache, next_state_id);
+            //self.cache_state(cache, next_state_id);
 
             if next_game.day == 24 {
                 let player_won = next_game.is_player_won();
@@ -244,8 +269,14 @@ impl HasChildren for PlayerNode {
 }
 
 impl PlayerNode {
-    pub fn new() -> PlayerNode {
-        todo!()
+    pub fn new(state_id: u32, action: Action) -> PlayerNode {
+        Self {
+            action: action,
+            enemy_moves: Vec::new(),
+            parent_state: state_id,
+            picks: 0,
+            wins: 0,
+        }
     }
 
     pub fn create(
@@ -432,10 +463,10 @@ mod tests {
         let game = Game::parse_from_strings(vec![
             "0", "20", "2 0", "2 0 0", "4", "24 1 1 0", "27 1 1 0", "33 1 0 0", "36 1 0 0",
         ]);
-        let sim = Simulation::new(&board, game);
+        let mut sim = Simulation::new(&board, game);
+        let mut cache = HashMap::new();
+        sim.simulate_current(&mut cache);
         assert_eq!(sim.current_state, 0);
-        assert_eq!(sim.player_nodes.len(), 8);
-        assert_eq!(sim.enemy_nodes.len(), 8 * 8);
     }
 
     #[test]
@@ -449,7 +480,7 @@ mod tests {
         let mut cache = HashMap::new();
 
         for _ in 0..10 {
-            sim.simulate_current(cache);
+            sim.simulate_current(&mut cache);
         }
         println!("{} ms", Duration::as_millis(&d.elapsed()));
         let moves = sim

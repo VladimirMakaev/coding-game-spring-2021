@@ -1,8 +1,8 @@
 use std::{cell, collections::HashMap, iter::FromIterator, str::FromStr, u8, usize};
 
-use itertools::Iterate;
+use itertools::{Iterate, Itertools};
 
-use crate::common::ParseError;
+use crate::{common::ParseError, tree::TreeCollection};
 
 pub struct Delta {
     dx: i8,
@@ -55,6 +55,49 @@ pub fn index_to_coord(index: u8) -> CubeCoord {
         34 => CubeCoord::new(0, -3, 3),
         35 => CubeCoord::new(1, -3, 2),
         36 => CubeCoord::new(2, -3, 1),
+        _ => todo!(),
+    }
+}
+
+pub fn coord_to_index(c: CubeCoord) -> u8 {
+    match c {
+        CubeCoord { x: 0, y: 0, z: 0 } => 0,
+        CubeCoord { x: 1, y: -1, z: 0 } => 1,
+        CubeCoord { x: 1, y: 0, z: -1 } => 2,
+        CubeCoord { x: 0, y: 1, z: -1 } => 3,
+        CubeCoord { x: -1, y: 1, z: 0 } => 4,
+        CubeCoord { x: -1, y: 0, z: 1 } => 5,
+        CubeCoord { x: 0, y: -1, z: 1 } => 6,
+        CubeCoord { x: 2, y: -2, z: 0 } => 7,
+        CubeCoord { x: 2, y: -1, z: -1 } => 8,
+        CubeCoord { x: 2, y: 0, z: -2 } => 9,
+        CubeCoord { x: 1, y: 1, z: -2 } => 10,
+        CubeCoord { x: 0, y: 2, z: -2 } => 11,
+        CubeCoord { x: -1, y: 2, z: -1 } => 12,
+        CubeCoord { x: -2, y: 2, z: 0 } => 13,
+        CubeCoord { x: -2, y: 1, z: 1 } => 14,
+        CubeCoord { x: -2, y: 0, z: 2 } => 15,
+        CubeCoord { x: -1, y: -1, z: 2 } => 16,
+        CubeCoord { x: 0, y: -2, z: 2 } => 17,
+        CubeCoord { x: 1, y: -2, z: 1 } => 18,
+        CubeCoord { x: 3, y: -3, z: 0 } => 19,
+        CubeCoord { x: 3, y: -2, z: -1 } => 20,
+        CubeCoord { x: 3, y: -1, z: -2 } => 21,
+        CubeCoord { x: 3, y: 0, z: -3 } => 22,
+        CubeCoord { x: 2, y: 1, z: -3 } => 23,
+        CubeCoord { x: 1, y: 2, z: -3 } => 24,
+        CubeCoord { x: 0, y: 3, z: -3 } => 25,
+        CubeCoord { x: -1, y: 3, z: -2 } => 26,
+        CubeCoord { x: -2, y: 3, z: -1 } => 27,
+        CubeCoord { x: -3, y: 3, z: 0 } => 28,
+        CubeCoord { x: -3, y: 2, z: 1 } => 29,
+        CubeCoord { x: -3, y: 1, z: 2 } => 30,
+        CubeCoord { x: -3, y: 0, z: 3 } => 31,
+        CubeCoord { x: -2, y: -1, z: 3 } => 32,
+        CubeCoord { x: -1, y: -2, z: 3 } => 33,
+        CubeCoord { x: 0, y: -3, z: 3 } => 34,
+        CubeCoord { x: 1, y: -3, z: 2 } => 35,
+        CubeCoord { x: 2, y: -3, z: 1 } => 36,
         _ => todo!(),
     }
 }
@@ -125,6 +168,9 @@ impl CubeCoord {
 pub struct Board {
     by_coord: HashMap<CubeCoord, u8>,
     cells: Vec<Cell>,
+    neighbors_1: Vec<Vec<u8>>,
+    neighbors_2: Vec<Vec<u8>>,
+    neighbors_3: Vec<Vec<u8>>,
 }
 
 impl Board {
@@ -136,7 +182,18 @@ impl Board {
         Self {
             cells,
             by_coord: Self::build_coord_map(),
+            neighbors_1: Self::build_neighbors(1),
+            neighbors_2: Self::build_neighbors(2),
+            neighbors_3: Self::build_neighbors(3),
         }
+    }
+
+    fn build_neighbors(d: u8) -> Vec<Vec<u8>> {
+        let mut result = Vec::new();
+        for index in 0..37 {
+            result.push(Self::get_neighbors_from_indexes(index, d).collect_vec());
+        }
+        result
     }
 
     pub fn get_by(&self, coord: CubeCoord) -> &Cell {
@@ -158,15 +215,32 @@ impl Board {
             .into_iter()
     }
 
-    pub fn get_neighbors_from(&self, from_index: u8, distance: u8) -> impl Iterator<Item = &Cell> {
+    fn get_neighbors_from_indexes(from_index: u8, distance: u8) -> impl Iterator<Item = u8> {
         let center = CubeCoord::new(0, 0, 0);
         let start = index_to_coord(from_index);
         (1..distance + 1)
             .map(move |r| start.ring_iter(r))
             .flatten()
             .filter(move |c| c.distance_to(center) <= 3)
-            .map(move |c| self.get_by(c))
-            .into_iter()
+            .map(|c| coord_to_index(c))
+    }
+
+    pub fn get_neighbors_indexes_by_distance(
+        &self,
+        from_index: u8,
+        distance: u8,
+    ) -> impl Iterator<Item = &u8> {
+        match distance {
+            1 => self.neighbors_1[from_index as usize].iter(),
+            2 => self.neighbors_2[from_index as usize].iter(),
+            3 => self.neighbors_3[from_index as usize].iter(),
+            _ => panic!("distance = {}", distance),
+        }
+    }
+
+    pub fn get_neighbors_from(&self, from_index: u8, distance: u8) -> impl Iterator<Item = &Cell> {
+        self.get_neighbors_indexes_by_distance(from_index, distance)
+            .map(move |i| &self.cells[*i as usize])
     }
 
     pub fn get_richness(&self, i: u8) -> u8 {

@@ -33,7 +33,7 @@ impl Action {
         .collect()
     }
 
-    fn find_next_complete_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
+    pub fn find_next_complete_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
         game.trees()
             .iter_trees_for(is_player)
             .filter(|t| t.size() == 3 && !t.is_dormant())
@@ -41,7 +41,7 @@ impl Action {
             .collect()
     }
 
-    fn find_next_grow_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
+    pub fn find_next_grow_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
         game.trees()
             .iter_trees_for(is_player)
             .filter(|t| t.size() < 3 && !t.is_dormant())
@@ -76,15 +76,11 @@ impl Action {
             .filter(move |cell| cell.richness > 0 && !game.trees().has_at(cell.index))
     }
 
-    fn find_next_seed_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
+    pub fn find_next_seed_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
         let trees = game.trees();
-        let available_trees: Vec<&Tree> = trees
+        return trees
             .iter_trees_for(is_player)
-            .filter(|x| x.not_dormant())
-            .collect();
-
-        return available_trees
-            .into_iter()
+            .filter(|x| x.not_dormant() && x.size() > 0)
             .map(|tree| {
                 (
                     tree.index(),

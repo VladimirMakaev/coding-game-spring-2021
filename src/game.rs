@@ -329,7 +329,7 @@ impl Game {
     pub fn is_player_won(&self) -> bool {
         match self.my_points.cmp(&self.enemy_points) {
             Ordering::Less => false,
-            Ordering::Equal => self.my_sun_points > self.enemy_points,
+            Ordering::Equal => self.my_sun_points > self.enemy_sun_points,
             Ordering::Greater => true,
         }
     }

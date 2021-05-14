@@ -1,6 +1,6 @@
 use core::panic;
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::{write, Debug},
     iter::FromIterator,
     str::FromStr,
@@ -53,6 +53,8 @@ impl Tree {
 pub struct TreeCollection {
     trees: Vec<Option<Tree>>,
     trees_by_size: Vec<u8>,
+    player_trees: BTreeSet<u8>,
+    enemy_trees: BTreeSet<u8>,
 }
 
 /*
@@ -72,14 +74,32 @@ impl TreeCollection {
         Self::new(Vec::new())
     }
 
+    fn tree_added(&mut self, index: u8, is_player: bool) {
+        if is_player {
+            self.player_trees.insert(index);
+        } else {
+            self.enemy_trees.insert(index);
+        }
+    }
+
+    fn tree_removed(&mut self, index: u8, is_player: bool) {
+        if is_player {
+            self.player_trees.remove(&index);
+        } else {
+            self.enemy_trees.remove(&index);
+        }
+    }
+
     pub fn seed(&mut self, index: u8, is_player: bool) {
         self.trees[index as usize] = Some(Tree::new(index, 0, is_player, true));
         self.trees_by_size[Self::size_index(0, is_player)] += 1;
+        self.tree_added(index, is_player);
     }
 
     pub fn remove(&mut self, index: u8) {
         if let Some(t) = std::mem::replace(&mut self.trees[index as usize], None) {
             self.trees_by_size[Self::size_index(t.size, t.is_mine)] -= 1;
+            self.tree_removed(index, t.is_mine());
         }
     }
 
@@ -124,20 +144,31 @@ impl TreeCollection {
     pub fn new(map: Vec<Tree>) -> Self {
         let mut trees_by_size: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
         let mut _trees: Vec<Option<Tree>> = (0..37).map(|_| None).collect_vec();
+        let mut player_trees = BTreeSet::new();
+        let mut enemy_trees = BTreeSet::new();
 
         for t in map {
+            let i = t.index();
+
             match (t.is_mine, t.size) {
-                (true, x) if x <= 3 => trees_by_size[t.size as usize] += 1,
-                (false, y) if y <= 3 => trees_by_size[t.size as usize + 4] += 1,
+                (true, x) if x <= 3 => {
+                    trees_by_size[t.size as usize] += 1;
+                    player_trees.insert(i);
+                }
+                (false, y) if y <= 3 => {
+                    trees_by_size[t.size as usize + 4] += 1;
+                    enemy_trees.insert(i);
+                }
                 _ => panic!("Incorrect size: {} for is_mine: {}", t.size, t.is_mine),
             }
-            let i = t.index();
             _trees[i as usize] = Some(t);
         }
 
         Self {
             trees: _trees,
             trees_by_size,
+            player_trees,
+            enemy_trees,
         }
     }
 
@@ -152,6 +183,12 @@ impl TreeCollection {
 
     pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
         self.trees.iter().flatten().filter(|t| t.is_mine)
+        /*
+        self.player_trees
+            .iter()
+            .map(move |i| &self.trees[*i as usize])
+            .flatten()
+            */
     }
 
     pub fn iter_trees_for(&self, is_player: bool) -> impl Iterator<Item = &Tree> {
