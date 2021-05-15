@@ -142,6 +142,30 @@ impl<'a> Simulation<'a> {
         }
     }
 
+    pub fn simulate2(&mut self, state: u32, depth: u32, width: u32) {
+        //self.cache_state(cache, state);
+        let mut state_id = state;
+        for d in 0..depth {
+            self.ensure_player_nodes(state_id);
+            let state = State::get_node(state_id, self);
+
+            let (p_id, _) = Self::pick_node_by_ucb_2(&self, state);
+            self.ensure_enemy_nodes(p_id);
+            let (enemy_id, _) = Self::pick_node_by_ucb_2(&self, &self.player_nodes[p_id as usize]);
+            let next_state_id = self.get_or_create_next_state(enemy_id);
+            let next_state = State::get_node(next_state_id, self);
+            let ref next_game = next_state.game;
+            //self.cache_state(cache, next_state_id);
+
+            if next_game.day == 24 {
+                let player_won = next_game.is_player_won();
+                self.on_player_won(next_state_id, player_won);
+                break;
+            }
+            state_id = next_state_id;
+        }
+    }
+
     pub fn simulate(&mut self, state: u32, cache: &mut HashMap<Game, u32>) {
         //self.cache_state(cache, state);
         let mut state_id = state;
@@ -236,7 +260,7 @@ pub trait GameNode {
 
     fn get_parent<'a>(&self, simulation: &'a Simulation) -> (u32, &'a Self::Parent);
 
-    fn mean_win(&self) -> f64 {
+    fn score(&self) -> f64 {
         self.wins() as f64 / self.picks() as f64
     }
 
@@ -246,8 +270,7 @@ pub trait GameNode {
         }
 
         let (_, parent) = self.get_parent(simulation);
-        return self.mean_win()
-            + SQRT_2 * ((parent.picks() as f64).ln() / self.picks() as f64).sqrt();
+        return self.score() + SQRT_2 * ((parent.picks() as f64).ln() / self.picks() as f64).sqrt();
     }
 }
 
@@ -499,6 +522,31 @@ mod tests {
                 .partial_cmp(&y.ucb(&sim))
                 .unwrap_or(Ordering::Less)
         });*/
+        println!("{:?}", moves);
+    }
+
+    #[test]
+    fn test_bad_simuation() {
+        let board = Board::default_with_inactive(vec![28, 4, 3, 2, 6, 19].into_iter());
+        let game = Game::parse_from_strings(vec![
+            "0", "20", "2 0", "2 0 0", "4", "20 1 0 0", "24 1 0 0", "29 1 1 0", "33 1 1 0",
+        ]);
+        let mut sim = Simulation::new(&board, game);
+        let mut cache = HashMap::new();
+        for _ in 0..1000 {
+            sim.simulate_current(&mut cache);
+        }
+
+        let moves = sim
+            .get_moves_summary()
+            .map(|x| {
+                (
+                    x.action,
+                    x.ucb(&sim),
+                    std::fmt::format(format_args!("{}/{}", x.wins, x.picks)),
+                )
+            })
+            .collect_vec();
         println!("{:?}", moves);
     }
 

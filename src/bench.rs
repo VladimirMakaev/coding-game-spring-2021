@@ -19,8 +19,6 @@ pub mod parse;
 mod simulation;
 mod tree;
 
-pub fn main() {}
-
 pub fn play(board: &Board, game: Game, day: u8) -> Game {
     let mut r1 = rand::thread_rng();
     let mut game = game;
@@ -83,19 +81,20 @@ pub fn main2() {
     println!("{} ms.", Duration::as_millis(&d.elapsed()),);
 }
 
-pub fn main4() {
+pub fn main() {
     let board = Board::default_with_inactive(vec![26, 30, 14, 0, 8, 21, 35].into_iter());
     let game = Game::parse_from_strings(vec![
         "0", "20", "2 0", "2 0 0", "4", "19 1 0 0", "24 1 0 0", "28 1 1 0", "33 1 1 0",
     ]);
     let mut sim = Simulation::new(&board, game);
+
     let d = Instant::now();
     let mut cache = HashMap::new();
 
     let for_lookup = Game::parse_from_strings(vec![
         "1", "20", "4 0", "4 0 0", "4", "19 1 0 0", "24 1 0 0", "28 1 1 0", "33 1 1 0",
     ]);
-    for _ in 0..10 {
+    for _ in 0..10000 {
         sim.simulate_current(&mut cache);
     }
 
@@ -134,7 +133,7 @@ mod tests {
         ]);
 
         b.iter(|| {
-            let _ = play(&board, game.clone(), 25);
+            let _ = play(&board, game.clone(), 24);
         })
     }
 

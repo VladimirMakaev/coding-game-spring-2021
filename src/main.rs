@@ -9,6 +9,7 @@ use core::time;
 use std::{
     cmp::Ordering,
     collections::HashMap,
+    ops::Sub,
     time::{Duration, Instant},
 };
 
@@ -19,6 +20,7 @@ use parse::*;
 use simulation::*;
 
 use crate::{game::Game, tree::Tree};
+use chrono::prelude::*;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -32,7 +34,7 @@ fn main() {
         cells.push(cell);
     }
 
-    let mut time_allocation = 950;
+    let mut allowed_iterations = 1000;
     let board: Board = cells.into_iter().collect();
     let mut cache = HashMap::new();
     let mut sim = Simulation::new(&board, Game::empty());
@@ -82,16 +84,18 @@ fn main() {
             day,
             opp_is_waiting == 1,
         );
-        let timer = Instant::now();
+
+        let mut time = Utc::now();
         if let Some(state_id) = cache.get(&game) {
             sim.set_current(*state_id);
         } else {
             sim = Simulation::new(&board, game);
         }
         let mut counter = 0;
-        while Duration::as_millis(&timer.elapsed()) < time_allocation {
+        while counter < allowed_iterations {
             sim.simulate_current(&mut cache);
             counter += 1;
+            //eprintln!("Elapsed: {}", Duration::as_millis(&timer.elapsed()));
         }
 
         eprintln!("{} simulations", counter);
@@ -102,15 +106,11 @@ fn main() {
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
         let player_move = sim
             .get_moves_summary()
-            .max_by(|x, y| {
-                x.mean_win()
-                    .partial_cmp(&y.mean_win())
-                    .unwrap_or(Ordering::Less)
-            })
+            .max_by(|x, y| x.score().partial_cmp(&y.score()).unwrap_or(Ordering::Less))
             .unwrap();
 
         println!("{}", player_move.action);
 
-        time_allocation = 50;
+        allowed_iterations = 30;
     }
 }
