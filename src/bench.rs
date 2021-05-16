@@ -2,12 +2,11 @@
 
 use std::{
     collections::HashMap,
-    mem::size_of_val,
     time::{Duration, Instant},
 };
 
 use itertools::Itertools;
-use rand::{prelude::SliceRandom, Rng};
+use rand::prelude::SliceRandom;
 
 use crate::{actions::Action, board::Board, game::Game, simulation::Simulation, simulation::*};
 
@@ -44,15 +43,15 @@ pub fn main5() {
     let e_actions = Action::find_next_actions(&game, &board, false);
     let mut r1 = rand::thread_rng();
 
-    let act_1 = p_actions.choose(&mut r1).unwrap();
-    let act_2 = e_actions.choose(&mut r1).unwrap();
+    let _act_1 = p_actions.choose(&mut r1).unwrap();
+    let _act_2 = e_actions.choose(&mut r1).unwrap();
     let d = Instant::now();
     for _ in 0..100000 {
         let p_actions = Action::find_next_actions(&game, &board, true);
         let e_actions = Action::find_next_actions(&game, &board, false);
 
-        let act_1 = p_actions.choose(&mut r1).unwrap();
-        let act_2 = e_actions.choose(&mut r1).unwrap();
+        let _act_1 = p_actions.choose(&mut r1).unwrap();
+        let _act_2 = e_actions.choose(&mut r1).unwrap();
         //let _ = game.apply_actions(&board, *act_1, *act_2);
     }
 
@@ -108,9 +107,9 @@ pub fn main() {
                 x.ucb(&sim),
                 std::fmt::format(format_args!(
                     "{}/{} = {}",
-                    x.wins,
+                    x.total_score,
                     x.picks,
-                    x.wins as f64 / x.picks as f64
+                    x.total_score as f64 / x.picks as f64
                 )),
             )
         })

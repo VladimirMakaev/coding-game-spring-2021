@@ -1,9 +1,10 @@
-use core::panic;
+use core::{panic, time};
 use std::{
-    cmp::Ordering,
-    collections::HashMap,
+    cmp::{Ordering, Reverse},
+    collections::{vec_deque, BinaryHeap, HashMap},
     fmt::{Debug, Display},
-    u8,
+    time::Instant,
+    u32, u8, usize,
 };
 
 use itertools::{Iterate, Itertools};
@@ -12,6 +13,7 @@ use crate::{
     actions::Action,
     board::{index_to_coord, Board},
     parse::Next,
+    simulation::Simulation,
     tree::{Tree, TreeCollection},
 };
 
@@ -19,6 +21,7 @@ use crate::{
 pub struct Shadow {
     index: u8,
     size: u8,
+    caused_by_player: bool,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -98,6 +101,16 @@ impl Game {
         return &self.trees;
     }
 
+    pub fn get_harvest_cost_by_size(&self, size: u8, is_player: bool) -> i32 {
+        match size {
+            3 => 4,
+            2 => 7 + 4,
+            1 => 3 + 7 + 4,
+            0 => 1 + 3 + 7 + 4,
+            _ => panic!("{} is invalid size", size),
+        }
+    }
+
     pub fn get_sun_points(&self, is_player: bool) -> u16 {
         if is_player {
             self.my_sun_points
@@ -124,31 +137,106 @@ impl Game {
         &self,
         board: &'a Board,
         tree_index: u8,
+        sun_orientation: u8,
     ) -> impl Iterator<Item = u8> + 'b
     where
         'a: 'b,
     {
         let tree = self.trees().get(tree_index);
-        let sun_orientation = self.day % 6;
         board
             .get_line(index_to_coord(tree.index()), tree.size(), sun_orientation)
             .map(|x| x.index)
             .into_iter()
     }
 
-    pub fn find_shadows(&self, board: &Board) -> HashMap<u8, Shadow> {
-        self.trees
+    pub fn find_shadowed_area(&self, board: &Board, is_player: bool) -> (u32, u32, u32) {
+        let mut total_player_shadow_area = 0;
+        let mut enemy_trees_under_shadow = 0;
+        let mut this_player_trees_under_shadow = 0;
+
+        let all_shadows_player = self.find_potential_shadows_by_player(board, Some(is_player));
+        let all_shadows_enemy = self.find_potential_shadows_by_player(board, Some(!is_player));
+        total_player_shadow_area = all_shadows_player.len() as u32;
+
+        for (_, s) in vec![
+            all_shadows_player.into_iter(),
+            all_shadows_enemy.into_iter(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if self.trees().has_at(s.index) && s.size >= self.trees().get(s.index).size() {
+                let t_under_shadow = self.trees().get(s.index);
+                if t_under_shadow.is_mine() != is_player {
+                    enemy_trees_under_shadow += 1;
+                } else {
+                    this_player_trees_under_shadow += 1;
+                }
+            }
+        }
+        (
+            total_player_shadow_area,
+            this_player_trees_under_shadow,
+            enemy_trees_under_shadow,
+        )
+    }
+
+    fn find_potential_shadows_by_player(
+        &self,
+        board: &Board,
+        is_player: Option<bool>,
+    ) -> HashMap<u8, Shadow> {
+        let tree_iter = self
+            .trees()
             .iter()
+            .filter(|t| t.size() > 0)
+            .filter(|x| is_player.is_none() || is_player == Some(x.is_mine()));
+
+        tree_iter
             .map(|t| {
-                self.find_shadows_by(board, t.index()).map(move |s| {
-                    (
-                        s,
-                        Shadow {
-                            index: s,
-                            size: t.size(),
-                        },
-                    )
-                })
+                board
+                    .get_neighbors_indexes_by_distance(t.index(), t.size())
+                    .filter(|x| board.get_richness(**x) > 0)
+                    .map(move |i| {
+                        (
+                            *i,
+                            Shadow {
+                                index: *i,
+                                size: t.size(),
+                                caused_by_player: t.is_mine(),
+                            },
+                        )
+                    })
+            })
+            .flatten()
+            .sorted_by_key(|x| x.1.size)
+            .collect()
+    }
+
+    fn find_shadows_by_player(
+        &self,
+        board: &Board,
+        sun_orientation: u8,
+        is_player: Option<bool>,
+    ) -> HashMap<u8, Shadow> {
+        let tree_iter = self
+            .trees()
+            .iter()
+            .filter(|x| is_player.is_none() || is_player == Some(x.is_mine()));
+
+        tree_iter
+            .map(|t| {
+                self.find_shadows_by(board, t.index(), sun_orientation)
+                    .map(move |s| {
+                        (
+                            s,
+                            Shadow {
+                                index: s,
+                                size: t.size(),
+                                caused_by_player: t.is_mine(),
+                            },
+                        )
+                    })
             })
             .flatten()
             .sorted_by_key(|x| x.1.size)
@@ -156,7 +244,7 @@ impl Game {
     }
 
     fn pay_action_cost(&mut self, board: &Board, action: Action, is_player: bool) {
-        let cost = Action::get_action_cost(self, board, action, is_player);
+        let cost = Action::get_action_cost(self, action, is_player);
         if is_player {
             self.my_sun_points -= cost as u16;
         } else {
@@ -225,7 +313,7 @@ impl Game {
     }
 
     fn force_wait_when_no_points(&self, board: &Board, action: Action, sun_points: u16) -> Action {
-        if Action::get_action_cost(self, board, action, false) as u16 > sun_points {
+        if Action::get_action_cost(self, action, false) as u16 > sun_points {
             Action::WAIT
         } else {
             action
@@ -269,8 +357,27 @@ impl Game {
         }
     }
 
+    pub fn average_sun_income(&self, board: &Board, is_player: bool) -> u32 {
+        let x: u32 = (1..7u8)
+            .map(|o| {
+                let all_shadows = self.find_shadows_by_player(board, (self.day + o) % 6, None);
+                return self
+                    .trees
+                    .iter_trees_for(is_player)
+                    .filter(|t| match (&all_shadows.get(&t.index()), t.size()) {
+                        (Some(s), tree_size) if s.size >= tree_size => false,
+                        (_, _) => true,
+                    })
+                    .map(|x| x.size() as u32)
+                    .collect_vec();
+            })
+            .flatten()
+            .sum();
+        return x / 6;
+    }
+
     fn apply_sun_points_for(&mut self, board: &Board, is_player: bool) {
-        let all_shadows = self.find_shadows(board);
+        let all_shadows = self.find_shadows_by_player(board, self.day % 6, None);
         let sun_trees: Vec<_> = self
             .trees
             .iter_trees_for(is_player)
@@ -335,42 +442,119 @@ impl Game {
     }
 }
 
-pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -> Action {
-    fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
-        let can_wait = game.get_sun_points(true) < 3;
-        let start_chopping = game.nutrients < 18 || game.day > 18;
+pub fn search_next_action(
+    game: &Game,
+    board: &Board,
+    width: usize,
+    time_limit: u128,
+) -> (u32, Action) {
+    fn get_actions(
+        game: &Game,
+        board: &Board,
+        width: usize,
+        is_player: bool,
+    ) -> impl Iterator<Item = Action> {
+        Action::find_next_actions(&game, &board, is_player)
+            .into_iter()
+            .sorted_by(|x, y| compare(&game, &board, x, y).reverse())
+            .take(width)
+    }
 
-        let state_next_day_left = game
-            .apply_single_action(board, *x, true)
-            .apply_new_day(board);
+    let mut games = vec![game.clone()];
+    let mut heap = BinaryHeap::new();
+    let mut moves = Vec::new();
+    heap.push((Reverse(0), 0, 0, None));
+    let start = Instant::now();
+    let mut best_at_level = Vec::<Option<usize>>::new();
+    let mut iterations_on_level = 0;
 
-        let state_next_day_right = game
-            .apply_single_action(board, *y, true)
-            .apply_new_day(board);
+    while let Some((Reverse(level), score, game_id, move_id)) = heap.pop() {
+        if best_at_level.len() == level {
+            best_at_level.push(move_id);
+            iterations_on_level = 0
+        } else {
+            iterations_on_level += 1;
+        }
 
-        match (x, y) {
-            (Action::COMPLETE(a), Action::COMPLETE(b)) => compare_by_richness(game, board, *a, *b),
-            (Action::WAIT, Action::WAIT) => Ordering::Equal,
-            (Action::WAIT, Action::GROW(_)) => Ordering::Less,
-            (Action::WAIT, _) => greater_if_true(can_wait),
-            (Action::COMPLETE(_), Action::GROW(_)) => greater_if_true(start_chopping),
-            (Action::GROW(x), Action::GROW(y)) => greater_if_true(
-                state_next_day_left.enemy_sun_points < state_next_day_right.enemy_sun_points,
-            ),
-            (Action::COMPLETE(_), Action::SEED(_, _)) => greater_if_true(start_chopping),
-            (Action::SEED(_, a), Action::SEED(_, b)) => compare_by_richness(game, board, *a, *b),
-            (Action::GROW(_), Action::SEED(_, to)) if board.get_richness(*to) == 3 => {
-                Ordering::Less
+        if iterations_on_level == width {
+            continue;
+        }
+
+        let now = Instant::now();
+        if now.duration_since(start).as_millis() > time_limit {
+            break;
+        }
+        if games[game_id].day == 24 {
+            continue;
+        }
+        for p_action in get_actions(&games[game_id], &board, width, true) {
+            for e_action in vec![Action::WAIT] {
+                let new_game = games[game_id].apply_actions(&board, p_action, e_action);
+                /*eprintln!(
+                    "L:{}, {}. Score: {:?}",
+                    level,
+                    p_action,
+                    Simulation::get_score(&new_game, &board, true),
+                );*/
+
+                heap.push((
+                    std::cmp::Reverse(level + 1),
+                    Simulation::get_score(&new_game, &board, true).value(),
+                    games.len(),
+                    Some(moves.len()),
+                ));
+                games.push(new_game);
+                moves.push((move_id, p_action, e_action, game_id))
             }
-            (Action::GROW(_), Action::SEED(_, to)) => Ordering::Greater,
-
-            (Action::GROW(_), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
-            (_, Action::WAIT) => compare(game, board, y, x).reverse(),
-            (Action::SEED(_, _), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
-            (Action::SEED(_, _), Action::GROW(_)) => compare(game, board, y, x).reverse(),
         }
     }
 
+    let mut last_item = best_at_level.last().unwrap().unwrap();
+
+    loop {
+        let (parent_move, player, enemy, _) = moves[last_item];
+        if let Some(next) = parent_move {
+            last_item = next;
+        } else {
+            return (best_at_level.len() as u32, player);
+        }
+    }
+}
+
+pub fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
+    let can_wait = game.get_sun_points(true) < 3;
+    let start_chopping = game.nutrients < 18 || game.day > 18;
+
+    let state_next_day_left = game
+        .apply_single_action(board, *x, true)
+        .apply_new_day(board);
+
+    let state_next_day_right = game
+        .apply_single_action(board, *y, true)
+        .apply_new_day(board);
+
+    match (x, y) {
+        (Action::COMPLETE(a), Action::COMPLETE(b)) => compare_by_richness(game, board, *a, *b),
+        (Action::WAIT, Action::WAIT) => Ordering::Equal,
+        (Action::WAIT, Action::GROW(_)) => Ordering::Less,
+        (Action::WAIT, _) => greater_if_true(can_wait),
+        (Action::COMPLETE(_), Action::GROW(_)) => greater_if_true(start_chopping),
+        (Action::GROW(x), Action::GROW(y)) => greater_if_true(
+            state_next_day_left.enemy_sun_points < state_next_day_right.enemy_sun_points,
+        ),
+        (Action::COMPLETE(_), Action::SEED(_, _)) => greater_if_true(start_chopping),
+        (Action::SEED(_, a), Action::SEED(_, b)) => compare_by_richness(game, board, *a, *b),
+        (Action::GROW(_), Action::SEED(_, to)) if board.get_richness(*to) == 3 => Ordering::Less,
+        (Action::GROW(_), Action::SEED(_, to)) => Ordering::Greater,
+
+        (Action::GROW(_), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
+        (_, Action::WAIT) => compare(game, board, y, x).reverse(),
+        (Action::SEED(_, _), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
+        (Action::SEED(_, _), Action::GROW(_)) => compare(game, board, y, x).reverse(),
+    }
+}
+
+pub fn get_next_action_wood(game: &Game, board: &Board, actions: &Vec<Action>) -> Action {
     return actions
         .iter()
         .max_by(|x, y| compare(game, board, x, y))
@@ -411,6 +595,7 @@ mod tests {
     use crate::{parse::Next, tree::Tree};
 
     use super::*;
+    use crate::simulation::*;
 
     #[test]
     fn test_hashmap() {
@@ -474,5 +659,61 @@ mod tests {
         ]);
 
         assert_eq!(game, expected_state);
+    }
+
+    #[test]
+    fn test_sun_income() {
+        let board = Board::default();
+        let game_strs = vec![
+            "1", "20", "4 0", "4 0 0", "4", "19 1 0 0", "25 1 0 0", "28 1 1 0", "34 1 1 0",
+        ];
+        let game = Game::parse_from_strings(game_strs);
+        let (x, y) = (
+            game.average_sun_income(&board, true),
+            game.average_sun_income(&board, true),
+        );
+
+        assert_eq!((x, y), (2, 2));
+    }
+
+    #[test]
+    fn test_sun_income_2() {
+        let board = Board::default();
+        let game_strs = vec![
+            "3", "20", "4 0", "3 0 0", "9", "3 0 0 1", "6 0 1 1", "8 1 0 1", "17 1 1 1",
+            "18 0 1 1", "19 2 0 0", "25 2 0 1", "28 1 1 0", "34 2 1 1",
+        ];
+        let game = Game::parse_from_strings(game_strs);
+        let (x, y) = (
+            game.average_sun_income(&board, true),
+            game.average_sun_income(&board, false),
+        );
+
+        assert_eq!((x, y), (3, 5));
+    }
+
+    #[test]
+    fn test_harvest_cost() {
+        let board = Board::default();
+        let game_strs = vec![
+            "3", "20", "4 0", "3 0 0", "9", "3 0 0 1", "6 0 1 1", "8 1 0 1", "17 1 1 1",
+            "18 0 1 1", "19 2 0 0", "25 2 0 1", "28 1 1 0", "34 2 1 1",
+        ];
+        let game = Game::parse_from_strings(game_strs);
+
+        let h = game.get_harvest_cost_by_size(1, true);
+        assert_eq!(h, 14);
+    }
+
+    #[test]
+    fn test_game_search() {
+        let board = Board::default();
+        let game_strs = vec![
+            "2", "20", "4 0", "4 0 0", "4", "23 2 1 0", "26 1 1 0", "32 2 0 0", "35 1 0 0",
+        ];
+        let game = Game::parse_from_strings(game_strs);
+
+        let next_move = search_next_action(&game, &board, 10, 100);
+        println!("{}-{}", next_move.0, next_move.1);
     }
 }

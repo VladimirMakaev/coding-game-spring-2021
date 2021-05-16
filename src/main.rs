@@ -34,10 +34,8 @@ fn main() {
         cells.push(cell);
     }
 
-    let mut allowed_iterations = 1000;
+    let mut time_limit = 1000;
     let board: Board = cells.into_iter().collect();
-    let mut cache = HashMap::new();
-    let mut sim = Simulation::new(&board, Game::empty());
 
     /*
         let new = Instant::now();
@@ -50,6 +48,7 @@ fn main() {
     */
     // game loop
     loop {
+        let d = Instant::now();
         let day: u8 = Next::read(); // the game lasts 24 days: 0-23
         let nutrients: u16 = Next::read(); // the base score you gain from the next COMPLETE action
         let inputs: Vec<u16> = Next::read_many();
@@ -67,6 +66,7 @@ fn main() {
         }
 
         let number_of_possible_moves: i32 = Next::read(); //test
+
         let mut actions = Vec::<Action>::new();
         for _i in 0..number_of_possible_moves as usize {
             let possible_move: Action = Next::read();
@@ -84,33 +84,43 @@ fn main() {
             day,
             opp_is_waiting == 1,
         );
+        /*
+        let mut sim = Simulation::new(&board, game);
+        let mut c = 0;
+        loop {
+            sim.simulate2(0, 5, 20, 1);
+            c += 1;
+            let finish = Instant::now();
 
-        let mut time = Utc::now();
-        if let Some(state_id) = cache.get(&game) {
-            sim.set_current(*state_id);
-        } else {
-            sim = Simulation::new(&board, game);
-        }
-        let mut counter = 0;
-        while counter < allowed_iterations {
-            sim.simulate_current(&mut cache);
-            counter += 1;
-            //eprintln!("Elapsed: {}", Duration::as_millis(&timer.elapsed()));
-        }
+            if finish.duration_since(start).as_millis() > 90 {
+                break;
+            }
+        }*/
+        let start = Instant::now();
+        let (d, action) = game::search_next_action(&game, &board, 10, 100);
+        let finish = Instant::now();
 
-        eprintln!("{} simulations", counter);
+        eprintln!(
+            "elapsed: {} ms. {} depth",
+            finish.duration_since(start).as_millis(),
+            d
+        );
+        // Simulation::print_simulation(&sim, 0, 0, 1);
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
         // GROW cellIdx | SEED sourceIdx targetIdx | COMPLETE cellIdx | WAIT <message>
-        let player_move = sim
-            .get_moves_summary()
-            .max_by(|x, y| x.score().partial_cmp(&y.score()).unwrap_or(Ordering::Less))
-            .unwrap();
+        /*let player_move = sim
+        .get_moves_summary()
+        .max_by(|x, y| {
+            x.avg_score()
+                .partial_cmp(&y.avg_score())
+                .unwrap_or(Ordering::Less)
+        })
+        .unwrap();*/
 
-        println!("{}", player_move.action);
-
-        allowed_iterations = 30;
+        println!("{}", action);
+        time_limit = 100;
     }
 }

@@ -9,6 +9,14 @@ version = "0.1.0"
 name = "bench"
 path = "src/bench.rs"
 
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "tests"
+path = "src/tests.rs"
+
 [profile.release]
 debug = true
 

@@ -47,6 +47,10 @@ impl Tree {
     pub fn set_dormant(&mut self, is_dormant: bool) {
         self.is_dormant = is_dormant;
     }
+
+    pub fn time_to_complete(&self) -> u8 {
+        4 - self.size
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -68,6 +72,10 @@ impl TreeCollection {
     fn size_index(index: u8, is_player: bool) -> usize {
         let offset: usize = if is_player { 0 } else { 4 };
         return offset + index as usize;
+    }
+
+    pub fn len(&self, is_player: bool) -> u8 {
+        (0..4).map(|i| self.get_amount_of_size(i, is_player)).sum()
     }
 
     pub fn empty() -> Self {
@@ -172,10 +180,6 @@ impl TreeCollection {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.trees.len()
-    }
-
     pub fn get_amount_of_size(&self, size: u8, is_mine: bool) -> u8 {
         let offset = if is_mine { 0 } else { 4 };
         self.trees_by_size[offset + size as usize]
@@ -255,7 +259,6 @@ impl FromStr for Tree {
 
 #[cfg(test)]
 mod tests {
-    use crate::tree;
 
     use super::*;
 
