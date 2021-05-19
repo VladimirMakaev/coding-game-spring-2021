@@ -97,7 +97,7 @@ fn main() {
             }
         }*/
         let start = Instant::now();
-        let (d, action) = game::search_next_action(&game, &board, 10, 100);
+        let (d, action) = game::search_next_action(&game, &board, 5, 100);
         let finish = Instant::now();
 
         eprintln!(

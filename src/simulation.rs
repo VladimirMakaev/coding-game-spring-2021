@@ -1,6 +1,6 @@
 use core::f64;
 use std::{
-    cmp::Ordering,
+    cmp::{Ordering, Reverse},
     collections::{BinaryHeap, HashMap},
     f64::consts::SQRT_2,
     time::Instant,
@@ -337,32 +337,24 @@ impl<'a> Simulation<'a> {
     }
 
     fn get_points_for_tree(game: &Game, board: &Board, tree: u8, is_player: bool) -> i32 {
-        let max_trees = vec![1, 2, 2, 4];
+        let max_trees = vec![1, 2, 3, 4];
         todo!()
     }
 
     pub fn get_score(game: &Game, board: &Board, is_player: bool) -> Score {
         fn get_points_for_tree(game: &Game, size: u8, is_player: bool) -> i32 {
-            let max_trees = vec![1, 2, 2, 4];
+            let max_trees = vec![2, 3, 4, 5];
             let amount = game.trees().get_amount_of_size(size, is_player) as i32;
             let days_remaining = 24 - game.day;
-            let can_complete = if 4 - size < days_remaining { 1 } else { 0 };
-            let within_max = if amount <= max_trees[size as usize] as i32 {
-                1
-            } else {
-                0
+            let can_complete = 4 - size <= days_remaining;
+            let within_max = amount <= max_trees[size as usize];
+            return match (can_complete, within_max) {
+                (true, true) => 1,
+                (true, false) => -1,
+                (false, true) => -2,
+                (false, false) => -2,
             };
-            return can_complete * within_max;
         }
-
-        let harvest_by_richness: i32 = game
-            .trees()
-            .iter_trees_for(is_player)
-            .map(|x| {
-                board.get_richness(x.index()) as i32
-                    * get_points_for_tree(game, x.size(), is_player)
-            })
-            .sum();
 
         let nutrients = game.nutrients as i32;
         let t_total: i32 = (0..4)
@@ -381,26 +373,31 @@ impl<'a> Simulation<'a> {
 
         let mut n = nutrients;
 
-        for s in 0..4 {
-            let s = 3 - s;
-            for _ in 0..game.trees().get_amount_of_size(s, is_player) {
-                if sun_budget - game.get_harvest_cost_by_size(s, is_player) > 0 {
-                    sun_budget -= game.get_harvest_cost_by_size(s, is_player);
-                    potential_harvest += n * get_points_for_tree(game, s, is_player);
-                    n -= 1 * get_points_for_tree(game, s, is_player);
-                } else {
-                    break;
-                }
+        for t in game
+            .trees()
+            .iter_trees_for(is_player)
+            .sorted_by_key(|t| (Reverse(t.size()), board.get_richness(t.index())))
+        {
+            if sun_budget - game.get_harvest_cost_by_size(t.size(), is_player) > 0 {
+                sun_budget -= game.get_harvest_cost_by_size(t.size(), is_player);
+                potential_harvest += (n + board.get_richness(t.index()) as i32)
+                    * get_points_for_tree(game, t.size(), is_player);
+                n -= 1;
             }
         }
-
         let points = game.get_points(is_player) as i32;
+
+        let win_score = match (game.day >= 23, game.is_player_won()) {
+            (true, x) if x == is_player => 50,
+            (true, _) => -50,
+            (false, _) => 0,
+        };
 
         return Score {
             area_score: 0,
-            points_score: 2 * points,
-            richness_score: 2 * harvest_by_richness,
-            sun_score: 2 * player_income - enemy_income,
+            points_score: (2 * points as i32),
+            richness_score: 0,
+            sun_score: 3 * player_income - 5 * enemy_income,
             trees_score: potential_harvest,
             win_score: 0,
         };
@@ -446,8 +443,8 @@ impl<'a> Simulation<'a> {
         let score_for_richness = total_richness_by_trees * 4;
 
         let win_score = match (game.day >= 23, game.is_player_won()) {
-            (true, x) if x == is_player => 10000,
-            (true, _) => -5000,
+            (true, x) if x == is_player => 100,
+            (true, _) => -100,
             (false, _) => 0,
         };
 
@@ -457,7 +454,7 @@ impl<'a> Simulation<'a> {
             0,
             score_for_trees,
             score_for_richness,
-            0,
+            win_score,
         );
     }
 
@@ -516,7 +513,7 @@ impl<'a> Simulation<'a> {
                 let next_state = State::get_node(next_state_id, self);
                 let ref next_game = next_state.game;
                 //self.cache_state(cache, next_state_id);
-                state_id = next_state_id;
+                state_id = next_state_id; //d
 
                 if next_game.day == 24 {
                     break;
@@ -1212,9 +1209,9 @@ mod tests {
     fn test_score_of_moves_ahead() {
         let board = Board::default_with_inactive(vec![].into_iter());
         let game = Game::parse_from_strings(vec![
-            "7", "20", "8 0", "10 0 0", "12", "1 0 1 0", "2 0 0 0", "3 1 1 0", "4 3 0 0",
-            "6 2 0 0", "11 2 1 0", "19 2 1 0", "25 3 1 0", "26 1 0 0", "28 2 0 0", "30 1 0 0",
-            "34 2 0 0",
+            "20", "9", "0 90", "4 110 0", "16", "0 1 1 0", "1 2 1 0", "3 2 1 1", "4 1 1 0",
+            "5 2 1 0", "6 2 0 1", "11 2 1 0", "18 1 1 1", "19 3 1 0", "22 3 0 0", "24 3 0 0",
+            "26 2 0 0", "28 2 0 0", "30 1 0 0", "34 2 0 0", "36 1 0 0",
         ]);
         print_score(&game, &board);
 

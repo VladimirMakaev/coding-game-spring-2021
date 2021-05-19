@@ -442,24 +442,24 @@ impl Game {
     }
 }
 
+fn get_best_actions(
+    game: &Game,
+    board: &Board,
+    width: usize,
+    is_player: bool,
+) -> impl Iterator<Item = Action> {
+    Action::find_next_actions(&game, &board, is_player)
+        .into_iter()
+        .sorted_by(|x, y| compare(&game, &board, x, y).reverse())
+        .take(width)
+}
+
 pub fn search_next_action(
     game: &Game,
     board: &Board,
     width: usize,
     time_limit: u128,
 ) -> (u32, Action) {
-    fn get_actions(
-        game: &Game,
-        board: &Board,
-        width: usize,
-        is_player: bool,
-    ) -> impl Iterator<Item = Action> {
-        Action::find_next_actions(&game, &board, is_player)
-            .into_iter()
-            .sorted_by(|x, y| compare(&game, &board, x, y).reverse())
-            .take(width)
-    }
-
     let mut games = vec![game.clone()];
     let mut heap = BinaryHeap::new();
     let mut moves = Vec::new();
@@ -487,7 +487,7 @@ pub fn search_next_action(
         if games[game_id].day == 24 {
             continue;
         }
-        for p_action in get_actions(&games[game_id], &board, width, true) {
+        for p_action in get_best_actions(&games[game_id], &board, width, true) {
             for e_action in vec![Action::WAIT] {
                 let new_game = games[game_id].apply_actions(&board, p_action, e_action);
                 /*eprintln!(
@@ -523,8 +523,6 @@ pub fn search_next_action(
 
 pub fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
     let can_wait = game.get_sun_points(true) < 3;
-    let start_chopping = game.nutrients < 18 || game.day > 18;
-
     let state_next_day_left = game
         .apply_single_action(board, *x, true)
         .apply_new_day(board);
@@ -533,18 +531,31 @@ pub fn compare(game: &Game, board: &Board, x: &Action, y: &Action) -> Ordering {
         .apply_single_action(board, *y, true)
         .apply_new_day(board);
 
+    fn can_harvest(game: &Game, size: u8) -> bool {
+        24 - game.day >= 4 - size
+    }
+
     match (x, y) {
         (Action::COMPLETE(a), Action::COMPLETE(b)) => compare_by_richness(game, board, *a, *b),
+        (Action::COMPLETE(_), _) => Ordering::Greater,
         (Action::WAIT, Action::WAIT) => Ordering::Equal,
         (Action::WAIT, Action::GROW(_)) => Ordering::Less,
+        (Action::WAIT, Action::SEED(from, to))
+            if board.get_richness(*to) < 2 || !can_harvest(game, 0) =>
+        {
+            Ordering::Greater
+        }
+
         (Action::WAIT, _) => greater_if_true(can_wait),
-        (Action::COMPLETE(_), Action::GROW(_)) => greater_if_true(start_chopping),
         (Action::GROW(x), Action::GROW(y)) => greater_if_true(
             state_next_day_left.enemy_sun_points < state_next_day_right.enemy_sun_points,
         ),
-        (Action::COMPLETE(_), Action::SEED(_, _)) => greater_if_true(start_chopping),
         (Action::SEED(_, a), Action::SEED(_, b)) => compare_by_richness(game, board, *a, *b),
-        (Action::GROW(_), Action::SEED(_, to)) if board.get_richness(*to) == 3 => Ordering::Less,
+        (Action::GROW(_), Action::SEED(_, to))
+            if board.get_richness(*to) == 3 && can_harvest(game, 0) =>
+        {
+            Ordering::Less
+        }
         (Action::GROW(_), Action::SEED(_, to)) => Ordering::Greater,
 
         (Action::GROW(_), Action::COMPLETE(_)) => compare(game, board, y, x).reverse(),
@@ -592,6 +603,8 @@ fn greater_if_true(value: bool) -> Ordering {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::{parse::Next, tree::Tree};
 
     use super::*;
@@ -706,10 +719,27 @@ mod tests {
     }
 
     #[test]
+    fn test_find_next_best_actions() {
+        let board = Board::default_with_inactive(vec![].into_iter());
+        let game = Game::parse_from_strings(vec![
+            "22", "8", "12 84", "11 127 0", "19", "0 0 1 0", "1 1 1 0", "2 0 1 0", "6 2 0 0",
+            "8 1 1 0", "9 0 1 0", "11 3 1 0", "12 0 1 0", "14 2 1 0", "17 0 1 0", "18 2 1 0",
+            "21 0 1 0", "22 1 0 0", "24 1 0 0", "26 2 0 0", "28 2 0 0", "30 1 0 0", "34 2 0 0",
+            "36 1 0 0",
+        ]);
+
+        let actions = get_best_actions(&game, &board, 10, true).collect_vec();
+
+        assert_eq!(actions, vec![Action::WAIT]);
+    }
+
+    #[test]
     fn test_game_search() {
-        let board = Board::default();
+        let board = Board::default_with_inactive(vec![24, 3, 6, 33].into_iter());
         let game_strs = vec![
-            "2", "20", "4 0", "4 0 0", "4", "23 2 1 0", "26 1 1 0", "32 2 0 0", "35 1 0 0",
+            "23", "5", "4 95", "6 146 0", "15", "0 0 1 0", "4 3 1 0", "8 2 1 0", "9 1 1 0",
+            "12 0 1 0", "13 1 1 0", "15 3 1 0", "17 2 1 1", "21 2 0 0", "23 2 0 0", "25 2 0 0",
+            "28 2 0 0", "30 1 0 0", "32 2 1 0", "35 2 0 0",
         ];
         let game = Game::parse_from_strings(game_strs);
 
