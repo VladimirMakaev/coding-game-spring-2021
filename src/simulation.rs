@@ -1036,13 +1036,14 @@ mod tests {
         );
     }
 
+    #[test]
     pub fn test_allocation() {
         let limit = 1_000_00;
         let mut vec = Vec::with_capacity(limit);
         let trees: TreeCollection = TreeCollection::from_strings(vec!["5 2 1 0"]);
-        let board = Board::default();
+        let _board = Board::default();
         let game = Game::new(trees, 20, 10, 20, 0, 0, 10, false);
-        for i in 0..limit {
+        for _i in 0..limit {
             vec.push(game.clone());
         }
     }

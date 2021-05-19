@@ -32,7 +32,7 @@ impl Action {
         .collect()
     }
 
-    pub fn find_next_complete_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
+    pub fn find_next_complete_actions(game: &Game, _board: &Board, is_player: bool) -> Vec<Action> {
         game.trees()
             .iter_trees_for(is_player)
             .filter(|t| t.size() == 3 && !t.is_dormant())
@@ -40,7 +40,7 @@ impl Action {
             .collect()
     }
 
-    pub fn find_next_grow_actions(game: &Game, board: &Board, is_player: bool) -> Vec<Action> {
+    pub fn find_next_grow_actions(game: &Game, _board: &Board, is_player: bool) -> Vec<Action> {
         game.trees()
             .iter_trees_for(is_player)
             .filter(|t| t.size() < 3 && !t.is_dormant())

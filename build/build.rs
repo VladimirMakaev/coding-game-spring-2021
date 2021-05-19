@@ -1,8 +1,13 @@
-use bundle_rs::{Bundle, ModuleFileSystem};
+use std::path::Path;
 
-fn main() {
-    let mut bundle = Bundle::new("main", ModuleFileSystem::new(vec!["./src"]));
-    bundle.load().unwrap();
-    let mut file = std::fs::File::create("./dist/singlefile.rs").unwrap();
-    bundle.write(&mut file).unwrap();
+use bundle_rs::Bundle;
+
+fn main() -> std::io::Result<()> {
+    Bundle::new(
+        Path::new("./src/main.rs"),
+        Path::new("./dist/singlefile.rs"),
+    )
+    .stript_tests(true)
+    .build_output()?;
+    Ok(())
 }

@@ -28,4 +28,4 @@ itertools = "0.10.0"
 rand = "0.8.3"
 
 [build-dependencies]
-bundle-rs = {git = "https://github.com/VladimirMakaev/bundle-rs.git", branch = "main"}
+bundle-rs = {git = "https://github.com/VladimirMakaev/bundle-rs.git", branch = "use-syn"}

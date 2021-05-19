@@ -1,8 +1,8 @@
-use std::{cell, collections::HashMap, io::empty, iter::FromIterator, str::FromStr, u8, usize};
+use std::{collections::HashMap, iter::FromIterator, str::FromStr, u8, usize};
 
-use itertools::{Iterate, Itertools};
+use itertools::Itertools;
 
-use crate::{common::ParseError, tree::TreeCollection};
+use crate::common::ParseError;
 
 pub struct Delta {
     dx: i8,

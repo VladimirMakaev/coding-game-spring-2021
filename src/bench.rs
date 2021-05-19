@@ -63,8 +63,8 @@ pub fn main2() {
     let game = Game::parse_from_strings(vec![
         "0", "20", "2 0", "2 0 0", "4", "19 1 0 0", "24 1 0 0", "28 1 1 0", "33 1 1 0",
     ]);
-    let p_actions = Action::find_next_actions(&game, &board, true);
-    let e_actions = Action::find_next_actions(&game, &board, false);
+    let _p_actions = Action::find_next_actions(&game, &board, true);
+    let _e_actions = Action::find_next_actions(&game, &board, false);
     let mut r1 = rand::thread_rng();
     let d = Instant::now();
     let mut x = Vec::new();
@@ -90,7 +90,7 @@ pub fn main() {
     let d = Instant::now();
     let mut cache = HashMap::new();
 
-    let for_lookup = Game::parse_from_strings(vec![
+    let _for_lookup = Game::parse_from_strings(vec![
         "1", "20", "4 0", "4 0 0", "4", "19 1 0 0", "24 1 0 0", "28 1 1 0", "33 1 1 0",
     ]);
     for _ in 0..10000 {

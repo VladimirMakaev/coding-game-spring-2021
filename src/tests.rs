@@ -209,7 +209,7 @@ mod tests {
         .sorted()
         .collect_vec();
 
-        let trees = game.trees().iter_trees_for(false).collect_vec();
+        let _trees = game.trees().iter_trees_for(false).collect_vec();
 
         let actions = Action::find_next_grow_actions(&game, &board, false)
             .into_iter()

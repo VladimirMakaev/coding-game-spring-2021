@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use rand::prelude::{IteratorRandom, SliceRandom};
+use rand::prelude::IteratorRandom;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {

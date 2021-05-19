@@ -1,26 +1,17 @@
-mod actions;
-mod board;
+pub mod actions;
+pub mod board;
 pub mod common;
-mod game;
+pub mod game;
 pub mod parse;
-mod simulation;
-mod tree;
-use core::time;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    ops::Sub,
-    time::{Duration, Instant},
-};
+pub mod simulation;
+pub mod tree;
+use std::time::Instant;
 
 use actions::*;
 use board::{Board, Cell};
-use itertools::{assert_equal, Itertools};
 use parse::*;
-use simulation::*;
 
 use crate::{game::Game, tree::Tree};
-use chrono::prelude::*;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -29,12 +20,11 @@ use chrono::prelude::*;
 fn main() {
     let number_of_cells: i32 = Next::read(); // 37
     let mut cells = Vec::new();
-    for i in 0..number_of_cells as usize {
+    for _i in 0..number_of_cells as usize {
         let cell: Cell = Next::read();
         cells.push(cell);
     }
 
-    let mut time_limit = 1000;
     let board: Board = cells.into_iter().collect();
 
     /*
@@ -48,7 +38,6 @@ fn main() {
     */
     // game loop
     loop {
-        let d = Instant::now();
         let day: u8 = Next::read(); // the game lasts 24 days: 0-23
         let nutrients: u16 = Next::read(); // the base score you gain from the next COMPLETE action
         let inputs: Vec<u16> = Next::read_many();
@@ -121,6 +110,5 @@ fn main() {
         .unwrap();*/
 
         println!("{}", action);
-        time_limit = 100;
     }
 }

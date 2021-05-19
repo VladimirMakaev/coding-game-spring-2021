@@ -1,11 +1,5 @@
 use core::panic;
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    fmt::{write, Debug},
-    iter::FromIterator,
-    str::FromStr,
-    string, usize,
-};
+use std::{collections::BTreeSet, fmt::Debug, iter::FromIterator, str::FromStr, usize};
 
 use itertools::Itertools;
 
@@ -185,6 +179,7 @@ impl TreeCollection {
         self.trees_by_size[offset + size as usize]
     }
 
+    #[cfg(test)]
     pub fn my_trees(&self) -> impl Iterator<Item = &Tree> {
         self.trees.iter().flatten().filter(|t| t.is_mine)
         /*
