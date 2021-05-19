@@ -1,28 +1,20 @@
 use core::f64;
 use std::{
     cmp::{Ordering, Reverse},
-    collections::{BinaryHeap, HashMap},
+    collections::HashMap,
     f64::consts::SQRT_2,
-    time::Instant,
     u32, usize,
 };
 
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 
-use crate::{
-    actions::Action,
-    board::{self, Board},
-    common::random_max,
-    game::{get_next_action_wood, Game},
-};
+use crate::{actions::Action, board::Board, common::random_max, game::Game};
 
 pub struct Simulation<'a> {
     board: &'a Board,
     player_nodes: Vec<PlayerNode>,
     enemy_nodes: Vec<EnemyNode>,
-    free_nodes: Vec<usize>,
-    free_games: Vec<usize>,
     states: Vec<State>,
     state_by_games: HashMap<&'a Game, u32>,
     current_state: u32,
@@ -33,10 +25,8 @@ impl<'a> Simulation<'a> {
         let mut result = Self {
             current_state: 0,
             board: board,
-            free_nodes: Vec::with_capacity(1_000_000),
             states: Vec::with_capacity(1_000_000),
             state_by_games: HashMap::new(),
-            free_games: Vec::with_capacity(1_000_000),
             player_nodes: Vec::with_capacity(1_000_000),
             enemy_nodes: Vec::with_capacity(1_000_000),
         };
@@ -696,7 +686,7 @@ impl PlayerNode {
             enemy_moves: enemy_moves
                 .into_iter()
                 .enumerate()
-                .map(|(i, enemy_action)| {
+                .map(|(_i, enemy_action)| {
                     sim.enemy_nodes
                         .push(EnemyNode::new(this_id, state_id, enemy_action));
                     return sim.enemy_nodes.len() as u32 - 1;

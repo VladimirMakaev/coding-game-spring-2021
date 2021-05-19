@@ -13,10 +13,6 @@ path = "src/bench.rs"
 name = "main"
 path = "src/main.rs"
 
-[[bin]]
-name = "tests"
-path = "src/tests.rs"
-
 [profile.release]
 debug = true
 
