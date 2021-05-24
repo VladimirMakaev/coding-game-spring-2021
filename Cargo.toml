@@ -6,12 +6,12 @@ name = "coding-game-spring-2021"
 version = "0.1.0"
 
 [[bin]]
-name = "bench"
-path = "src/bench.rs"
-
-[[bin]]
 name = "main"
 path = "src/main.rs"
+
+[[bin]]
+name = "beam"
+path = "src/beam.rs"
 
 [profile.release]
 debug = true
